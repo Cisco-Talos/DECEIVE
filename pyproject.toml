@@ -1,21 +1,34 @@
 [project]
 name = "deceive"
 version = "0.1.0"
-description = "AI-driven high-interaction SSH honeypot"
+description = "Profile-driven network deception with evaluative validation"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "asyncssh",
-    "langchain",
-    "langchain-community",
-    "langchain-openai",
-    "langchain-google-genai",
-    "langchain-ollama",
-    "langchain-aws",
-    "transformers",
-    "torch",
-    "anthropic",
+    "asyncssh>=2.23.1",
+    "hypercorn[h3]>=0.18,<0.19",
+    "httpx[http2]>=0.28,<1",
+    "pydantic>=2.12,<3",
+    "pyyaml>=6,<7",
+    "regex>=2024.11.6",
 ]
+
+[project.optional-dependencies]
+openai = ["openai>=2,<3"]
+ollama = ["ollama>=0.6,<1"]
+bedrock = ["boto3>=1.42,<2"]
+gemini = ["google-genai>=1,<3"]
+all-providers = ["deceive[openai,ollama,bedrock,gemini]"]
+
+[project.scripts]
+deceive = "deceive.cli:main"
+
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["deceive"]
 
 [dependency-groups]
 dev = [
@@ -28,4 +41,4 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 
 [tool.uv]
-package = false
+package = true

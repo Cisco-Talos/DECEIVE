@@ -1,0 +1,40 @@
+schema_version: 1
+# For two model-free reference CVEs, see reference-deployment.yaml.
+# For requirement-driven composition, see composition-deployment.yaml.
+# Validate the exact selection before serving:
+# deceive config validate --config deployment.yaml --deception ANOTHER_PROFILE
+# CLI --deception / --profile selections add to this file; serve revalidates.
+data_dir: ./data
+sensor_name: deceive
+# stdout JSONL is the default. Uncomment to write a file relative to this YAML.
+# log_file: ./logs/deceive.log
+# Instead of explicit listeners, profiles can declare their own requirements:
+# deceptions:
+#   - profile: profiles/metrics.yaml
+# deception_defaults:
+#   host: 0.0.0.0
+listeners:
+  - name: web
+    protocol: https
+    profile: demo-http
+    host: 0.0.0.0
+    port: 8443
+    quic_port: 8443
+    versions: ["1.1", "2", "3"]
+    # Set to the externally mapped UDP port when it differs from quic_port.
+    advertised_port: 8443
+# Add a named provider and an SSH listener to enable generative interaction.
+# providers:
+#   default:
+#     kind: openai
+#     model: YOUR_MODEL
+#     api_key_env: OPENAI_API_KEY
+#     temperature: null
+# listeners:
+#   - name: ssh
+#     protocol: ssh
+#     profile: linux-ssh
+#     port: 8022
+#     provider: default
+#     analyze: true
+#     accounts: {guest: "", root: "*", user1: secret}

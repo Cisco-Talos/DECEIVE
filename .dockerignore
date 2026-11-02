@@ -1,0 +1,15 @@
+# Keep the build context small and exclude local credentials/data by default.
+**
+!Dockerfile
+!.dockerignore
+!pyproject.toml
+!uv.lock
+!README.md
+!LICENSE
+!deceive/
+!deceive/**
+deceive/**/__pycache__/
+deceive/**/*.pyc
+deceive/**/*.key
+deceive/**/*.pem
+deceive/**/*-ssh-key

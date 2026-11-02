@@ -35,7 +35,7 @@ jobs:
         uses: astral-sh/setup-uv@v8.1.0
 
       - name: Install dependencies
-        run: uv sync --frozen --python ${{ matrix.python-version }}
+        run: uv sync --frozen --all-extras --python ${{ matrix.python-version }}
 
       - name: Run tests
-        run: uv run --frozen pytest
+        run: uv run --frozen --all-extras pytest

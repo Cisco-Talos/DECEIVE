@@ -1,0 +1,93 @@
+schema_version: 1
+id: sudo-2019-14287
+references: [https://seclists.org/oss-sec/2019/q4/18]
+cases:
+  - id: identity-and-prerequisites
+    steps:
+      - command: hostname
+        expect: {body: "build-node-03\n"}
+      - command: sudo -V
+        expect: {body: "Sudo version 1.8.27\n"}
+      - command: sudo -l
+        expect: {contains: "(ALL, !root) NOPASSWD: /usr/bin/id"}
+      - command: cat /etc/sudoers.d/guest
+        expect: {body: "guest ALL=(ALL, !root) NOPASSWD: /usr/bin/id\n"}
+  - id: published-bypass-and-unchanged-login-identity
+    steps:
+      - command: sudo -u#-1 id
+        expect: {contains: "uid=0(root)"}
+      - command: sudo -u#4294967295 /usr/bin/id
+        expect: {contains: "uid=0(root)"}
+      - command: sudo -u#-1 id -u
+        expect: {body: "0\n"}
+      - command: id
+        expect: {body: "uid=1000(guest) gid=1000(guest) groups=1000(guest)\n"}
+  - id: ordinary-root-request-is-denied
+    steps:
+      - command: sudo -u root id
+        expect: {contains: not permitted}
+      - command: sudo -u#0 id
+        expect: {contains: not permitted}
+      - command: whoami
+        expect: {body: "guest\n"}
+  - id: patched-variant
+    overrides:
+      behaviors:
+        - id: sudo-policy
+          kind: sudo-2019-14287
+          options: {patched: true}
+        - id: identity
+          kind: identity
+    steps:
+      - command: sudo -V
+        expect: {body: "Sudo version 1.8.28\n"}
+      - command: sudo -u#-1 id
+        expect: {contains: not permitted}
+      - command: sudo -u#4294967295 id
+        expect: {contains: not permitted}
+  - id: missing-all-prerequisite
+    overrides:
+      files:
+        /etc/sudoers.d/guest: "guest ALL=(guest) NOPASSWD: /usr/bin/id\n"
+      behaviors:
+        - id: sudo-policy
+          kind: sudo-2019-14287
+          options: {runas_all: false}
+        - id: identity
+          kind: identity
+    steps:
+      - command: sudo -l
+        expect: {contains: "(guest) NOPASSWD: /usr/bin/id"}
+      - command: cat /etc/sudoers.d/guest
+        expect: {body: "guest ALL=(guest) NOPASSWD: /usr/bin/id\n"}
+      - command: sudo -u#-1 id -u
+        expect: {contains: not permitted}
+  - id: independent-baselines-and-private-state
+    concurrent: 3
+    repeat: 2
+    steps:
+      - command: hostname
+        expect: {body: "build-node-03\n"}
+      - command: cd /etc
+        expect: {body: "", state: {cwd: /etc}}
+      - command: pwd
+        new_session: true
+        expect: {body: "/home/guest\n"}
+  - id: unsupported-binaries-are-not-executed
+    steps:
+      - command: sudo -u#-1 /bin/sh
+        expect: {body: "sudo: command not permitted by the simulated policy\n", exit_status: 1}
+  - id: whitespace-and-option-spelling
+    group: held_out
+    steps:
+      - command: "sudo   -u '#-1'   /usr/bin/id -u"
+        expect: {body: "0\n"}
+      - command: sudo --user=#4294967295 id -un
+        expect: {body: "root\n"}
+      - command: /usr/bin/sudo -n --user '#-1' -- id -u
+        expect: {body: "0\n"}
+  - id: ordinary-nonroot-target
+    group: held_out
+    steps:
+      - command: sudo -u#1234 id -u
+        expect: {body: "1234\n", exit_status: 0}

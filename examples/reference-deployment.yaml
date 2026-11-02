@@ -1,0 +1,17 @@
+schema_version: 1
+data_dir: ./data
+sensor_name: reference-honeypot
+# Both profiles are deterministic: no provider, model, or credentials needed.
+listeners:
+  - name: sudo
+    protocol: ssh
+    profile: sudo-2019-14287
+    host: 0.0.0.0
+    port: 8022
+    accounts: {guest: "", root: "*"}
+  - name: apache
+    protocol: http
+    profile: apache-2021-41773
+    host: 0.0.0.0
+    port: 8080
+    versions: ["1.1"]

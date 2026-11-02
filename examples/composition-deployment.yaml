@@ -1,0 +1,8 @@
+schema_version: 1
+data_dir: ./data
+deception_defaults:
+  host: 0.0.0.0
+# These share one HTTPS listener on 8443, with real HTTP/2 and HTTP/3 support.
+# Add profiles/diagnostics.yaml on the CLI, or list it here too.
+deceptions:
+  - profile: profiles/metrics.yaml

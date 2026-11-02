@@ -1,0 +1,30 @@
+schema_version: 1
+id: demo-http
+references: []
+cases:
+  - id: index
+    steps:
+      - path: /
+        expect: {status: 200, contains: Build Portal}
+  - id: structured-status
+    steps:
+      - path: /api/status
+        expect:
+          status: 200
+          json_value: {status: ok, service: build-portal}
+  - id: binary
+    concurrent: 4
+    steps:
+      - path: /download
+        expect: {status: 200, body_base64: AP+AQQ==}
+  - id: redirect-and-cookies
+    steps:
+      - path: /login
+        expect:
+          status: 302
+          headers: [[location, /signin], [set-cookie, "theme=default; Path=/"], [set-cookie, "locale=en; Path=/"]]
+  - id: missing-route
+    group: held_out
+    steps:
+      - path: /not-a-route
+        expect: {status: 404, body: "Not found\n"}

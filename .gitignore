@@ -169,3 +169,14 @@ cython_debug/
 
 # Local deployment artifacts and provider-specific secrets
 SSH/DEPLOY/
+.deceive/
+/data/
+/examples/data/
+/deployment.yaml
+/migrated/
+/logs/
+/results/
+/wheel-measurements.json
+/container-measurements.json
+/container-*.json
+/deceive-*.tar

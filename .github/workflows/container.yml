@@ -1,0 +1,71 @@
+name: Container and wheel
+
+on:
+  pull_request:
+    branches: [main, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: artifacts-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  container:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            platform: linux/amd64
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            platform: linux/arm64
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - uses: astral-sh/setup-uv@v8.1.0
+      - run: uv sync --frozen --all-extras
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          load: true
+          push: false
+          tags: deceive:ci
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+      - name: Test standard image
+        run: uv run --frozen --all-extras python scripts/container_smoke.py deceive:ci --report container-${{ matrix.arch }}.json
+      - run: docker save deceive:ci -o deceive-${{ matrix.arch }}.tar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: container-${{ matrix.arch }}
+          path: |
+            deceive-${{ matrix.arch }}.tar
+            container-${{ matrix.arch }}.json
+  wheel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - uses: astral-sh/setup-uv@v8.1.0
+      - run: uv build --wheel
+      - run: uv run --no-project python scripts/verify_wheel.py dist/*.whl
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel
+          path: |
+            dist/*.whl
+            wheel-measurements.json

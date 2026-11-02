@@ -1,0 +1,35 @@
+schema_version: 1
+id: linux-ssh
+version: "1"
+description: A Linux build host with stable identity, virtual baseline files and LLM fallback.
+protocol: ssh
+requirements:
+  protocol: ssh
+  preferred_port: 8022
+  capabilities: [ssh.commands, 'behavior:identity']
+identity:
+  hostname: build-node-03
+  os: Ubuntu 22.04.5 LTS
+  kernel: 5.15.0-130-generic
+  architecture: x86_64
+  username: guest
+  uid: 1000
+  ssh_version: OpenSSH_8.9p1 Ubuntu-3ubuntu0.10
+  banner: Welcome to the build server.
+files:
+  /etc/hostname: "build-node-03\n"
+  /etc/os-release: "NAME=Ubuntu\nVERSION=22.04.5\nID=ubuntu\nPRETTY_NAME=\"Ubuntu 22.04.5 LTS\"\n"
+  /etc/passwd: "root:x:0:0:root:/root:/bin/bash\nguest:x:1000:1000:Build Guest:/home/guest:/bin/bash\n"
+  /home/guest/README.txt: "Build artifacts are available through the portal.\n"
+behaviors:
+  - id: identity
+    kind: identity
+fallback: llm
+prompt: |
+  Emulate a Linux build server belonging to a small software company. Use the
+  supplied identity and virtual files consistently. Other activity is isolated to
+  this session. Answer only the current command and never invent a following
+  command. Return output only; the server renders the shell prompt and banner.
+limitations:
+  - Only declared baseline files and supported identity commands are deterministic.
+  - Other command output is generative; no command executes on a real system.

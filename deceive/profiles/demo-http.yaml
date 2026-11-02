@@ -1,0 +1,29 @@
+schema_version: 1
+id: demo-http
+version: "1"
+description: A deterministic application demonstrating HTTP/1.1, HTTP/2 and HTTP/3.
+protocol: http
+http_versions: ["1.1", "2", "3"]
+identity: {hostname: portal.build.example}
+behaviors:
+  - id: index
+    match: {path: /}
+    reply:
+      body: "<!doctype html><html><head><title>Build Portal</title></head><body><h1>Build Portal</h1><p>Service operational.</p></body></html>\n"
+      headers: [[content-type, text/html; charset=utf-8]]
+  - id: status
+    match: {path: /api/status, method: GET}
+    reply:
+      body: '{"status":"ok","service":"build-portal"}'
+      headers: [[content-type, application/json]]
+  - id: redirect
+    match: {path: /login}
+    reply:
+      status: 302
+      headers: [[location, /signin], [set-cookie, "theme=default; Path=/"], [set-cookie, "locale=en; Path=/"]]
+  - id: binary
+    match: {path: /download}
+    reply:
+      body_base64: AP+AQQ==
+      headers: [[content-type, application/octet-stream]]
+fallback_reply: {status: 404, body: "Not found\n"}

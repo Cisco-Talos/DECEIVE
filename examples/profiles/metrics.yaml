@@ -1,0 +1,17 @@
+schema_version: 1
+id: demo-metrics
+version: "1"
+description: A deterministic route demonstrating independently authored profile composition.
+requirements:
+  protocol: https
+  http_versions: ["2", "3"]
+  base_profile: demo-http
+  base_version: "1"
+  preferred_port: 8443
+  capabilities: [http.requests, 'behavior:rule']
+behaviors:
+  - id: metrics
+    match: {path: /api/metrics, method: GET}
+    reply:
+      body: '{"requests":42}'
+      headers: [[content-type, application/json]]

@@ -1,0 +1,17 @@
+schema_version: 1
+id: demo-diagnostics
+version: "1"
+description: Another composable application route; no real diagnostics are performed.
+requirements:
+  protocol: https
+  http_versions: ["2", "3"]
+  base_profile: demo-http
+  base_version: "1"
+  preferred_port: 8443
+  capabilities: [http.requests, 'behavior:rule']
+behaviors:
+  - id: diagnostics
+    match: {path: /api/diagnostics, method: GET}
+    reply:
+      body: '{"database":"connected","workers":4}'
+      headers: [[content-type, application/json]]

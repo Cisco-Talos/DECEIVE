@@ -1,3 +1,5 @@
+# LEGACY TEMPLATE: migrate with deceive config migrate SSH/config.ini --output-dir migrated
+# New deployments use examples/deployment.yaml and YAML deception profiles.
 # THIS IS A TEMPLATE CONFIG FILE FOR HADES
 # We provide reasonable defaults for most configuration items, but you should 
 # review this before using it in production. 

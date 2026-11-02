@@ -1,0 +1,28 @@
+schema_version: 1
+id: apache-2021-41773
+version: "1"
+description: Apache 2.4.49 single-encoded traversal to declared virtual file fixtures.
+protocol: http
+requirements:
+  protocol: http
+  http_versions: ["1.1"]
+  preferred_port: 8080
+  capabilities: [http.raw_path, 'behavior:apache-2021-41773']
+http_versions: ["1.1"]
+identity:
+  hostname: portal-legacy-01
+files:
+  /var/www/html/index.html: "<!doctype html><title>Build archive</title><h1>Build archive</h1>\n"
+  /usr/local/apache2/cgi-bin/status.txt: "Archive service ready\n"
+  /etc/passwd: "root:x:0:0:root:/root:/bin/bash\narchive:x:1001:1001:Archive Service:/srv/archive:/usr/sbin/nologin\n"
+behaviors:
+  - id: apache-traversal
+    kind: apache-2021-41773
+    options: {protected: false}
+references:
+  - https://httpd.apache.org/security/vulnerabilities_24.html#CVE-2021-41773
+limitations:
+  - HTTP/1.1 GET and HEAD application behavior only; no exact transport fingerprint.
+  - Traversal models the documented .%2e path segment, with a single decoding pass.
+  - Only declared virtual files can be returned. CGI execution and arbitrary RCE are excluded.
+  - Double-encoded follow-on CVE-2021-42013 behavior is rejected, not emulated.

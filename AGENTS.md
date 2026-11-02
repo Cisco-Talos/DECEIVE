@@ -5,26 +5,16 @@ consistent, idiomatic changes to DECEIVE.
 
 ## Project Overview
 
-DECEIVE, the DECeption with Evaluative Integrated Validation Engine, is a
-proof-of-concept high-interaction SSH honeypot. It accepts SSH connections,
-authenticates according to configurable honeypot account rules, sends attacker
-input to a configured LLM backend, returns realistic Linux-like command output,
-and writes JSON Lines telemetry for the full session.
+DECEIVE is a profile-driven proof-of-concept honeypot supporting real SSH and
+HTTP/HTTPS 1.1, 2, and 3 listeners. YAML profiles select deterministic, generative,
+or hybrid behavior over virtual data. Attacker input never reaches a real shell
+or host filesystem. Identity and baseline content stay consistent across
+connections; session state is private and temporary.
 
-The LLM-backed SSH interaction is DECEIVE's core simulation surface. The core
-engineering goal is to make that live interaction observable, bounded, testable,
-and believable without exposing a real shell or real filesystem.
-
-Primary implementation files:
-
-- `SSH/ssh_server.py` - AsyncSSH server, authentication, prompt assembly,
-  LangChain message history, JSON logging, and runtime configuration.
-- `SSH/config.ini.TEMPLATE` - tracked operator configuration template.
-- `SSH/prompt.txt` - default user prompt describing the host being emulated.
-- `tests/` - unit and integration coverage for configuration, authentication,
-  logging, session behavior, and real AsyncSSH connectivity with a fake LLM.
-- `README.md` - user-facing setup, runtime, testing, and log format reference.
-- `TODO.txt` - lightweight backlog and known priorities.
+Primary implementation lives in `deceive/`: `models.py`/`config.py` define YAML,
+`runtime.py` owns sessions and transcripts, `providers.py` contains optional SDK
+adapters, and `protocols/` owns protocol libraries. `SSH/ssh_server.py` is now
+migration guidance. Built-in profiles and acceptance suites ship in the wheel.
 
 ## Start-Of-Work Checklist
 
@@ -35,7 +25,7 @@ For any non-trivial change:
 3. Inspect the relevant tests before changing behavior.
 4. Update `TODO.txt` only when the change completes, changes, or adds a tracked
    backlog item.
-5. Update `README.md` and `SSH/config.ini.TEMPLATE` when setup, config keys,
+5. Update `README.md` and `examples/deployment.yaml` when setup, config keys,
    runtime behavior, or log fields change.
 
 ## Tech Stack
@@ -44,8 +34,8 @@ For any non-trivial change:
   `pyproject.toml`.
 - `uv` for dependency management and command execution.
 - `asyncssh` for the SSH server and integration test clients.
-- LangChain provider integrations for OpenAI, Azure OpenAI, Ollama, AWS Bedrock,
-  and Google Gemini.
+- Direct optional SDK adapters for OpenAI/Azure, Ollama, Bedrock, and Gemini.
+- Hypercorn/aioquic for HTTP/1.1–3; PyYAML/Pydantic for safe typed configuration.
 - `pytest` and `pytest-asyncio` for automated tests.
 - Standard library `argparse`, `configparser`, `logging`, `json`, `asyncio`, and
   path utilities. The current CLI is argparse-based; do not switch frameworks
@@ -62,12 +52,12 @@ uv sync
 uv run pytest
 uv run pytest tests/test_ssh_server_unit.py
 uv run pytest tests/test_ssh_integration.py
-uv run python SSH/ssh_server.py
+uv run deceive serve --profile demo-http
 ```
 
 When adding or removing dependencies, update `pyproject.toml` and `uv.lock`
-together. This project currently has `package = false`, so treat it as a script
-repository rather than an installed Python package.
+together. This project is an installed Python package with a console command and bundled
+profile assets. Verify wheels outside the checkout when packaging changes.
 
 ## Code Style
 
@@ -86,22 +76,13 @@ repository rather than an installed Python package.
 
 ## Runtime Architecture
 
-### SSH Server
+### Protocol Lifecycle
 
-`start_server()` creates an AsyncSSH listener from the active config. Preserve
-these behavior contracts:
-
-- `listen_host` may constrain binding; tests use `127.0.0.1`.
-- `port = 0` must work in tests to request a random local port.
-- Host private keys are resolved relative to the loaded config file first, then
-  relative to `SSH/`.
-- The server version string intentionally imitates OpenSSH.
-- The process handler must never grant access to a real local shell.
-
-`MySSHServer` owns SSH connection/auth callbacks. `handle_client()` owns
-interactive and non-interactive command handling. There is known cleanup work in
-`TODO.txt` around lifecycle ownership; avoid deepening the split between server
-instances and process handling.
+`Runtime.start()` validates profiles/providers and starts configured adapters.
+Use `host: 127.0.0.1`, `port: 0`, and ephemeral data directories in tests. Preserve
+real HTTP/2 and HTTP/3 negotiation tests; do not replace them with fallback HTTP.
+The runtime owns summaries and cleanup; SSH connection instances own authentication.
+Keep protocol code independent of deterministic/generative profile decisions.
 
 ### Authentication Semantics
 
@@ -117,33 +98,20 @@ policy option. Tests should cover all four modes.
 
 ### LLM Simulation
 
-`build_message_history()` composes:
+Provider adapters implement a text-only async interface. The runtime supplies
+fixed identity, virtual file facts, and bounded per-session history. Deterministic
+interactions also enter the transcript. Do not introduce local model/tokenizer
+downloads, model tools, or actual command execution.
 
-1. The configured system prompt from `[llm].system_prompt`.
-2. The user prompt from `--prompt`, `--prompt-file`, or `SSH/prompt.txt`.
-3. Per-session message history trimmed to `trimmer_max_tokens`.
-
-Preserve per-session isolation through `llm_sessions` and the session id passed
-in LangChain config. Runtime supports provider selection through `choose_llm()`;
-new providers should be small, testable branches with provider-specific config
-kept in `SSH/config.ini.TEMPLATE`.
-
-Interactive and non-interactive behavior differs:
-
-- Interactive sessions receive an initial banner/MOTD and shell prompt.
-- Interactive responses should end with a realistic shell prompt.
-- Non-interactive command output must not include a prompt or MOTD.
-- If an input would close the login shell, the model should return exactly
-  `YYY-END-OF-SESSION-YYY`.
-
-The LLM may hallucinate future user input. When changing prompts or response
-handling, preserve the rule that DECEIVE answers only the current input and does
-not invent the attacker's next command.
+Interactive SSH receives a server-owned banner and prompt. Non-interactive output
+contains neither. The model answers only the current input. The legacy
+`YYY-END-OF-SESSION-YYY` sentinel remains accepted as a session-ending decision.
 
 ## Logging Contracts
 
-DECEIVE logs JSON Lines to the configured `honeypot.log_file`. Relative log paths
-are resolved from the directory containing the loaded config file.
+DECEIVE writes JSON Lines to stdout by default or deployment `log_file`. Relative
+paths resolve from the deployment YAML directory. Preserve core telemetry fields;
+add new profile/request metadata rather than repurposing existing fields.
 
 Preserve these fields for session telemetry:
 
@@ -153,7 +121,7 @@ Preserve these fields for session telemetry:
 - `src_ip`, `src_port`, `dst_ip`, `dst_port`
 - `message`
 - `sensor_name`
-- `sensor_protocol` - currently `ssh`
+- `sensor_protocol` - SSH, HTTP, HTTPS, or an explicitly enabled adapter
 
 Important message types:
 
@@ -162,7 +130,8 @@ Important message types:
 - `Authentication success`
 - `Authentication failed`
 - `User input`
-- `LLM response`
+- `LLM response` (actual model output)
+- `Deception response` (deterministic output)
 - `Session summary`
 - `SSH connection closed`
 
@@ -182,35 +151,20 @@ traces containing secrets.
 
 ## Configuration And Local Artifacts
 
-Tracked:
+Tracked: deployment examples, packaged profiles/acceptance suites, legacy INI
+migration template, docs and skills. Keep generated data under an ignored data
+directory. Do not commit credentials, keys, generated logs, evaluation reports, or
+local deployment artifacts. Provider credentials use environment variables or
+mounted secret files; AWS uses its credential chain.
 
-- `SSH/config.ini.TEMPLATE`
-- `SSH/prompt.txt`
-
-Ignored/local:
-
-- `SSH/config.ini`
-- SSH host keys such as `SSH/ssh_host_key`, `SSH/deceive_host_key`, and `*.pub`
-- `*.log` files including honeypot logs
-- `.venv/`, `.pytest_cache/`, and other generated Python artifacts
-
-Do not commit local credentials, provider API keys, host private keys, generated
-logs, or deployment artifacts under `SSH/DEPLOY/`.
-
-When adding config settings:
-
-1. Add the setting to `SSH/config.ini.TEMPLATE` with a clear comment.
-2. Provide a sane default in `load_config()` if the server can run without an
-   explicit config file.
-3. Add CLI overrides only when operators need them.
-4. Cover config-file-relative behavior in tests when paths are involved.
-5. Update `README.md`.
+Update typed models, examples, docs, and tests together when adding settings.
+Assets resolve relative to their owning YAML, not the current working directory.
+Profiles cannot execute Python or choose real file paths from attacker input.
+Installed extensions are trusted code and must be explicitly allowlisted.
 
 ## Testing Requirements
 
-All tests must be deterministic and must not call a live LLM provider. Use fake
-message history objects, monkeypatched provider classes, or injected
-`message_history` objects.
+All tests must be deterministic and must not call a live LLM provider. Use injected fake providers and mocked SDK clients.
 
 Testing conventions:
 
@@ -218,8 +172,8 @@ Testing conventions:
 - Bind integration servers to `127.0.0.1` and `port = 0`.
 - Use `known_hosts=None` for ephemeral local AsyncSSH clients in tests.
 - Flush and close log handlers in fixtures to avoid leaking global state.
-- Reset module globals such as `config`, `accounts`, `llm_sessions`, and
-  `with_message_history` after tests that mutate runtime state.
+- Close runtimes, sockets, provider clients, observer tasks, and temporary data
+  directories after tests. Avoid module-global runtime state.
 - Assert log shape, base64 encoding, session id consistency, and one summary per
   session when touching session flow.
 
@@ -254,7 +208,8 @@ escape the simulation boundary.
 Update docs when behavior changes:
 
 - `README.md` for setup, running, operator behavior, log schema, or warnings.
-- `SSH/config.ini.TEMPLATE` for config changes.
+- `examples/deployment.yaml` and configuration docs for new settings; the legacy
+  INI template should continue explaining migration.
 - `SSH/prompt.txt` only for default emulation behavior.
 - `TODO.txt` for backlog changes or completed tracked priorities.
 - Tests for every observable auth, session, config, prompt, or logging contract.
@@ -270,11 +225,9 @@ Prefer Conventional Commit prefixes such as `feat:`, `fix:`, `docs:`, `test:`,
 
 ## Known Design Decisions
 
-- DECEIVE intentionally logs usernames and passwords supplied to the honeypot.
-- Unknown usernames currently authenticate successfully to maximize deception.
-- LLM calls are part of runtime behavior; only tests should replace them with
-  deterministic fakes.
-- Relative `log_file` paths resolve next to the loaded config file, not
-  necessarily the current working directory.
-- The default implementation currently lives mostly in one script. Refactor
-  incrementally and keep compatibility with documented commands.
+- Honeypot authentication intentionally records attempted usernames/passwords.
+- Unknown SSH users authenticate successfully.
+- Runtime models are optional; deterministic deployments need no credentials.
+- Session summaries use UNKNOWN when analysis is disabled or unavailable.
+- Shared persistent attacker state and cross-service system state are deferred.
+- Container publication/deployment are separate from building/testing artifacts.
