@@ -26,6 +26,17 @@ def main() -> None:
                        cwd=root, env=env, check=True)
         seconds = time.monotonic() - started
         binary = root / "bin/deceive"
+        help_text = subprocess.check_output([str(binary), "assess", "--help"],
+                                            cwd=root, env=env, text=True)
+        assert all(command in help_text for command in ("begin-loop", "record-review", "resume", "cleanup"))
+        partial = root / "assessment-partial"
+        partial.mkdir()
+        (partial / "state.json").write_text(json.dumps({"run_id": "wheel-partial", "phase": "finished",
+            "stop_reason": "cancelled", "loops": [], "spec": {"roles": ["protocol"],
+            "policy": {"minimum_realism": 85}}}))
+        subprocess.run([str(binary), "assess", "render", "--run", str(partial)],
+                       cwd=root, env=env, check=True)
+        assert "no completed candidate" in (partial / "dashboard.svg").read_text()
         interpreter = binary.resolve().with_name("python")
         packages = int(subprocess.check_output([str(interpreter), "-c",
             "from importlib.metadata import distributions;print(len(list(distributions())))"],
@@ -42,15 +53,15 @@ from importlib.resources import files
 from pathlib import Path
 import yaml
 from deceive.evaluate import evaluate
+from deceive.vulnerability_catalog import approval_for, bundled_vulnerabilities
 async def run():
-    approval = json.loads(files('deceive').joinpath('acceptance/reference-approval.json').read_text())
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
-        for name in ('sudo-2019-14287', 'apache-2021-41773'):
+        for name in bundled_vulnerabilities():
             suite = files('deceive').joinpath('acceptance', name + '.yaml')
             report = await evaluate(name, suite, root / name)
             assert report['passed_cases'] == report['total_cases'] and report['passed'], report
-            assert report['suite_fingerprint'] == approval['suites'][name]
+            assert report['suite_fingerprint'] == approval_for(name)['suites'][name]
         for version in ('2', '3'):
             suite = yaml.safe_load(files('deceive').joinpath('acceptance/demo-http.yaml').read_text())
             suite['http_version'] = version

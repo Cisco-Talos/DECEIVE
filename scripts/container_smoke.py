@@ -108,15 +108,15 @@ import asyncio, json, tempfile
 from importlib.resources import files
 from pathlib import Path
 from deceive.evaluate import evaluate
+from deceive.vulnerability_catalog import approval_for, bundled_vulnerabilities
 async def run():
     reports = []
-    approval = json.loads(files('deceive').joinpath('acceptance/reference-approval.json').read_text())
     with tempfile.TemporaryDirectory() as directory:
-        for name in ('sudo-2019-14287', 'apache-2021-41773'):
+        for name in bundled_vulnerabilities():
             suite = files('deceive').joinpath('acceptance', name + '.yaml')
             report = await evaluate(name, suite, Path(directory) / name)
             assert report['passed'] and report['passed_cases'] == report['total_cases'], report
-            assert report['suite_fingerprint'] == approval['suites'][name]
+            assert report['suite_fingerprint'] == approval_for(name)['suites'][name]
             reports.append({'profile': name, 'cases': report['total_cases'],
                             'suite_fingerprint': report['suite_fingerprint']})
     print(json.dumps(reports))

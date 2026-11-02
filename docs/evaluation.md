@@ -48,6 +48,12 @@ All required cases must pass. Held-out variations are reported separately; an
 optional `held_out_min_pass_rate` explicitly gates them. This is test-set coverage,
 not a universal fidelity or text-similarity score. Exceptions produce failed cases
 and a report rather than a pass. Reports are never overwritten automatically.
+Each step must contain at least one assertion. Empty `expect`, empty header/state
+maps alone, or `json_value: null` alone do not assert anything and are rejected.
+Empty `contains`/`regex` are rejected; use `body: ""` to assert an empty response.
+Explicit false/zero JSON values and empty exact text/binary outputs remain valid.
+Packaged `held_out` cases are visible variations; they are not private independent
+holdouts for a blind study.
 
 `results.json` contains profile/suite fingerprints, timestamps, per-step errors,
 base64 response bodies/header bytes, telemetry, and group pass rates.
@@ -82,3 +88,23 @@ separate checkpoint from approval of the implementation plan. Unsupported engine
 capabilities, exhausted budgets, and unresolved failures
 must remain visible. Profile activation, public exposure and publication are
 separate actions; the authoring loop does not perform them automatically.
+
+New vulnerabilities follow the mandatory [test-first contract](vulnerability-testing.md).
+CI discovers bundled CVEs, checks their agreement records and frozen suites, and
+runs acceptance on actual listeners. Wheel/container checks use the same inventory.
+Each new CVE gets its own approval record; existing approval dates/claims are not
+reused. Human review verifies that the tests failed before implementation.
+
+The [active assessment workflow](assessment.md) adapts
+EvidenceForge's independent-review and bounded-refinement approach to an active,
+protocol-agnostic assess/diagnose/fix loop. It supports fixed-count/until-criteria
+requests, per-profile and deployment-group coverage, and requires both correctness
+and convincing realism for quality success. Failed gates trigger repair rather
+than ending the run. Its defaults distinguish median-realism success
+from a diagnosed three-cycle plateau, require a final graphical dashboard and
+use localhost-exposed Docker targets with reuse/rebuild lifecycle management.
+The repository skill coordinates native independent reviewers; `deceive assess`
+provides deterministic lifecycle, probe, report and dashboard helpers. Acceptance
+assertions can target the managed localhost instance; protected variants run in
+separate local listeners with the same candidate. Ordinary tests use fake reviews
+and never call a live model. See [pilot verification](verification.md).

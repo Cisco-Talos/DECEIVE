@@ -4,6 +4,7 @@ schema_version: 1
 # Validate the exact selection before serving:
 # deceive config validate --config deployment.yaml --deception ANOTHER_PROFILE
 # CLI --deception / --profile selections add to this file; serve revalidates.
+# Active assessment uses the separate assessment.yaml spec; production YAML is unchanged.
 data_dir: ./data
 sensor_name: deceive
 # stdout JSONL is the default. Uncomment to write a file relative to this YAML.

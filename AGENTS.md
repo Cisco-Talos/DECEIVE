@@ -164,7 +164,26 @@ Installed extensions are trusted code and must be explicitly allowlisted.
 
 ## Testing Requirements
 
+Active assessment tooling lives under `deceive/assessment/` and is outside the
+production runtime path. Use `skills/deceive-assess/SKILL.md` for native independent
+reviewer loops. Keep acceptance hashes frozen, preserve existing edits, and never
+commit/push repairs automatically. Ordinary pytest uses fake reviews; Docker
+integration is in `scripts/assessment_smoke.py`. Current artifact and test CI
+targets ARM64 only; amd64 is a deferred optional enhancement.
+
 All tests must be deterministic and must not call a live LLM provider. Use injected fake providers and mocked SDK clients.
+
+New vulnerability behavior requires tests first. Research and agree on its
+behavior/acceptance criteria, write automated positive and negative/control cases,
+and record a failing run caused by the missing behavior/capability before
+implementing it. Include prerequisite, protected/unaffected, variation, state,
+isolation and intended-composition coverage as applicable. Use real negotiated
+protocols; an application response alone cannot prove a stream/frame exploit.
+Keep capability probes distinct from acceptance of a simulated vulnerability.
+See `docs/vulnerability-testing.md`. CI checks bundled CVE inventory, agreement
+records, frozen suites and actual acceptance runs; review verifies test-first
+history, which a passing pytest run cannot prove. Agentic realism review supplements
+these gates and cannot waive failures or rewrite agreed criteria.
 
 Testing conventions:
 

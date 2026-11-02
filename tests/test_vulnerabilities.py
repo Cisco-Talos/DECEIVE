@@ -3,23 +3,50 @@ from importlib.resources import files
 import asyncio
 import io
 import json
+from datetime import date
 from pathlib import Path
 
 import asyncssh
 import httpx
 import pytest
 
-from deceive.config import load_deployment, load_profile
-from deceive.evaluate import evaluate
+from deceive.config import fingerprint, load_deployment, load_profile, read_yaml
+from deceive.evaluate import Suite, evaluate
 from deceive.models import Behavior
+from deceive.vulnerabilities import CVE_HANDLERS
+from deceive.vulnerability_catalog import approval_for, bundled_vulnerabilities
+
+
+def test_bundled_cves_have_reviewed_nonempty_acceptance_contracts():
+    names = bundled_vulnerabilities()
+    assert names
+    exercised = set()
+    root = Path(__file__).resolve().parents[1]
+    for name in names:
+        profile = load_profile(name)
+        assert profile.id == name
+        exercised.update(b.kind for b in profile.behaviors if b.kind in CVE_HANDLERS)
+        path = Path(str(files("deceive").joinpath("acceptance", name + ".yaml")))
+        assert path.is_file(), f"{name}: acceptance suite required before shipping"
+        raw = read_yaml(path)
+        suite = Suite.model_validate(raw)
+        assert suite.id == name and suite.references
+        assert any(c.group == "held_out" for c in suite.cases), f"{name}: variation cases required"
+        approval = approval_for(name)
+        assert approval["schema_version"] == 1 and approval["approval"].strip()
+        date.fromisoformat(approval["approved_on"])
+        criteria = root / approval["criteria"]
+        assert criteria.resolve().is_relative_to(root) and criteria.is_file()
+        assert fingerprint(raw) == approval["suites"][name], f"{name}: agreed suite changed"
+    assert exercised == set(CVE_HANDLERS), "Every registered CVE handler needs a bundled profile and suite"
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("name", ["sudo-2019-14287", "apache-2021-41773"])
+@pytest.mark.parametrize("name", bundled_vulnerabilities())
 async def test_approved_reference_acceptance_suite(tmp_path, name):
     suite = files("deceive").joinpath("acceptance", name + ".yaml")
     report = await evaluate(name, suite, tmp_path / "report")
-    approval = json.loads(files("deceive").joinpath("acceptance/reference-approval.json").read_text())
+    approval = approval_for(name)
     assert report["suite_fingerprint"] == approval["suites"][name]
     assert report["passed"], report
     assert report["passed_cases"] == report["total_cases"]

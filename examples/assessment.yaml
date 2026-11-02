@@ -1,0 +1,26 @@
+schema_version: 1
+# Assessment specification, not production deployment YAML.
+policy:
+  mode: until
+  max_loops: 20
+  minimum_realism: 85
+  confirmations: 2
+  plateau_cycles: 3
+  minimum_gain: 3
+limits:
+  per_role_target: 30
+  reviewer_seconds: 600
+  concurrency: 4
+docker:
+  build: true
+  retain: true
+targets:
+  - name: sudo
+    profiles: [sudo-2019-14287]
+    claims: Debian 10 Linux SSH system; sudo 1.8.27, guest permitted id through an ALL-except-root policy. Effects are simulated; only declared identity/sudo command families are supported.
+  - name: apache
+    profiles: [apache-2021-41773]
+    claims: Apache 2.4.49 archive application over HTTP/1.1, with the declared single-encoded virtual-file traversal behavior. CGI execution and exact packet fingerprints are excluded.
+  - name: reference-group
+    deployment: reference-deployment.yaml
+    claims: Independent SSH and HTTP services in one runtime. Each has its own declared identity; cross-service shared mutable state is not claimed.

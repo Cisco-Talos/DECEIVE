@@ -14,17 +14,7 @@ concurrency:
 
 jobs:
   container:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: ubuntu-latest
-            platform: linux/amd64
-            arch: amd64
-          - runner: ubuntu-24.04-arm
-            platform: linux/arm64
-            arch: arm64
-    runs-on: ${{ matrix.runner }}
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
@@ -37,23 +27,25 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: ${{ matrix.platform }}
+          platforms: linux/arm64
           load: true
           push: false
           tags: deceive:ci
-          cache-from: type=gha,scope=${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+          cache-from: type=gha,scope=arm64
+          cache-to: type=gha,mode=max,scope=arm64
       - name: Test standard image
-        run: uv run --frozen --all-extras python scripts/container_smoke.py deceive:ci --report container-${{ matrix.arch }}.json
-      - run: docker save deceive:ci -o deceive-${{ matrix.arch }}.tar
+        run: uv run --frozen --all-extras python scripts/container_smoke.py deceive:ci --report container-arm64.json
+      - name: Test active assessment Docker lifecycle
+        run: uv run --frozen --all-extras python scripts/assessment_smoke.py deceive:ci
+      - run: docker save deceive:ci -o deceive-arm64.tar
       - uses: actions/upload-artifact@v4
         with:
-          name: container-${{ matrix.arch }}
+          name: container-arm64
           path: |
-            deceive-${{ matrix.arch }}.tar
-            container-${{ matrix.arch }}.json
+            deceive-arm64.tar
+            container-arm64.json
   wheel:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6

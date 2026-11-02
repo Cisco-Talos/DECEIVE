@@ -42,6 +42,8 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description="Profile-driven network deception")
     result.add_argument("--version", action="version", version="%(prog)s " + version("deceive"))
     commands = result.add_subparsers(dest="command", required=True)
+    from deceive.assessment.cli import add_parser
+    add_parser(commands)
     serve = commands.add_parser("serve", help="Start protocol listeners")
     selection_arguments(serve)
     profiles = commands.add_parser("profile", help="Validate and evaluate profiles")
@@ -149,7 +151,10 @@ def healthcheck(data_dir: Path) -> bool:
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
-        if args.command == "serve":
+        if args.command == "assess":
+            from deceive.assessment.cli import run
+            return run(args)
+        elif args.command == "serve":
             asyncio.run(serve(deployment_from_args(args)))
         elif args.command == "healthcheck":
             return 0 if healthcheck(args.data_dir) else 1

@@ -20,7 +20,7 @@ docker run --rm --name deceive -p 8080:8080 -v deceive-data:/data deceive:local
 curl http://localhost:8080/
 ```
 
-The artifact workflow produces prebuilt amd64/arm64 image archives and a Python
+The artifact workflow produces an ARM64 image archive and a Python
 wheel. After loading an image archive with `docker load`, use its image tag in
 place of `deceive:local`. Images are not automatically published to a registry.
 
@@ -168,6 +168,20 @@ and exits unsuccessfully if required assertions fail. Generative evaluation
 requires explicit `--live-model --config ...`; ordinary tests never call a live
 provider.
 
+New vulnerability behavior requires [automated tests first](docs/vulnerability-testing.md),
+including a recorded failing run and agreed, frozen acceptance criteria.
+Bundled CVE suites are discovered automatically in local and artifact checks.
+See the [HTTP/2–3 capability findings](docs/protocol-capability-findings.md) and
+the [active assessment contract](docs/agentic-assessment.md).
+
+The [active assessment tooling](docs/assessment.md) provides `deceive assess`
+lifecycle/probe/report helpers and a repository
+[deceive-assess skill](skills/deceive-assess/SKILL.md) for native independent
+reviewers and repeated repairs. Docker targets are exposed only on localhost;
+the skill preserves current edits and does not commit or push automatically.
+Start with `examples/assessment.yaml`. Correctness, realism and telemetry results
+remain separate, and every finalized run produces a graphical SVG dashboard.
+
 ## Development and verification
 
 ```sh
@@ -178,8 +192,9 @@ uv run python scripts/verify_wheel.py dist/deceive-0.1.0-py3-none-any.whl
 uv run --all-extras python scripts/container_smoke.py deceive:local
 ```
 
-CI requires actual HTTP/3 tests. Container CI builds and exercises native amd64
-and arm64 images, retaining measurement reports and image archives. Publication,
+CI requires actual HTTP/3 tests. Container CI builds and exercises the ARM64
+image, retaining measurement reports and an image archive. AMD64 is a deferred
+optional enhancement. Publication,
 merging, and deployment remain separate actions.
 
 ## License

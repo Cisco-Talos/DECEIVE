@@ -9,6 +9,8 @@ import json
 from pathlib import Path
 import regex
 import tempfile
+import uuid
+from collections.abc import Awaitable, Callable
 from typing import Literal
 
 import asyncssh
@@ -25,13 +27,22 @@ from deceive.telemetry import Telemetry, encode
 class Expected(Model):
     body: str | None = None
     body_base64: str | None = None
-    contains: str | None = None
-    regex: str | None = None
+    contains: str | None = Field(default=None, min_length=1)
+    regex: str | None = Field(default=None, min_length=1)
     status: int | None = None
     exit_status: int | None = None
     headers: list[tuple[str, str]] = Field(default_factory=list)
     json_value: object = None
     state: dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def has_assertion(self) -> Expected:
+        if not (self.headers or self.state or any(value is not None for value in (
+            self.body, self.body_base64, self.contains, self.regex, self.status,
+            self.exit_status, self.json_value,
+        ))):
+            raise ValueError("Each acceptance step needs at least one assertion")
+        return self
 
 
 class Step(Model):
@@ -100,6 +111,87 @@ def assertions(expected: Expected, result: HTTPResult, exit_status: int | None,
     if any(state.get(key) != value for key, value in expected.state.items()):
         errors.append("session state differs")
     return errors
+
+
+async def evaluate_external(suite_path: Path, protocol: str, version: str,
+                            execute: Callable[[dict], Awaitable[dict]]) -> dict:
+    """Reuse accepted assertions on a managed endpoint without creating a listener.
+
+    Overrides require a separate variant deployment. They are reported explicitly
+    rather than silently testing the base target as if it were protected.
+    """
+    raw = read_yaml(suite_path)
+    suite = Suite.model_validate(raw)
+    results = []
+    for case in suite.cases:
+        if case.overrides:
+            results.append({"id": case.id, "group": case.group, "passed": None,
+                            "backend": "requires_variant", "runs": []})
+            continue
+        runs = []
+
+        async def sequence() -> list[dict]:
+            session = "acceptance-" + uuid.uuid4().hex
+            output = []
+            try:
+                for step in case.steps:
+                    if step.new_session:
+                        await execute({"operation": "close", "session": session})
+                        session = "acceptance-" + uuid.uuid4().hex
+                    if protocol == "ssh":
+                        interactive = len(case.steps) > 1
+                        action = {"operation": "exec", "session": session if interactive else None,
+                                  "parameters": {"command": step.command, "interactive": interactive,
+                                      "username": case.username, "password": case.password}}
+                    else:
+                        action = {"operation": "request", "session": session, "parameters": {
+                            "version": version, "method": step.method, "path": step.path,
+                            "body_base64": step.body_base64 or encode(step.body), "headers": step.headers}}
+                    observed = await execute(action)
+                    if observed.get("error"):
+                        raise ValueError(observed["error"])
+                    facts = observed.get("facts", {})
+                    state = {}
+                    if step.expect.state:
+                        for key in step.expect.state:
+                            command = {"cwd": "pwd", "user": "whoami", "uid": "id -u"}.get(key)
+                            if protocol != "ssh" or command is None:
+                                raise ValueError("External state assertions require a network-visible state probe")
+                            check = await execute({"operation": "exec", "session": session,
+                                                   "parameters": {"command": command}})
+                            state[key] = base64.b64decode(check["body_base64"]).decode().strip()
+                    result = HTTPResult(facts.get("status", 200),
+                        base64.b64decode(observed.get("body_base64", "")), [
+                            (base64.b64decode(k), base64.b64decode(v)) for k, v in observed.get("headers", [])],
+                        observed.get("version", ""))
+                    if result.version != ("ssh" if protocol == "ssh" else version):
+                        raise ValueError("Protocol fallback in external acceptance")
+                    exit_status = facts.get("outputs", [{}])[-1].get("exit_status")
+                    errors = assertions(step.expect, result, exit_status, state)
+                    output.append({"interaction_id": observed.get("interaction_id"), "errors": errors})
+                return output
+            finally:
+                await execute({"operation": "close", "session": session})
+
+        try:
+            for _ in range(case.repeat):
+                runs.extend(await asyncio.gather(*(sequence() for _ in range(case.concurrent))))
+            passed = all(not step["errors"] for run in runs for step in run)
+            results.append({"id": case.id, "group": case.group, "passed": passed,
+                            "backend": "external", "runs": runs})
+        except (OSError, ValueError, TimeoutError, asyncssh.Error, httpx.HTTPError) as exc:
+            results.append({"id": case.id, "group": case.group, "passed": False,
+                            "backend": "external", "error": type(exc).__name__, "runs": runs})
+    assessed = [c for c in results if c["backend"] == "external"]
+    required = [c for c in assessed if c["group"] == "required"]
+    held_out = [c for c in assessed if c["group"] == "held_out"]
+    rate = sum(c["passed"] for c in held_out) / len(held_out) if held_out else None
+    passed = bool(assessed) and all(c["passed"] for c in required)
+    if suite.held_out_min_pass_rate is not None and held_out:
+        passed = passed and rate >= suite.held_out_min_pass_rate
+    return {"schema_version": 1, "suite_id": suite.id, "suite_fingerprint": fingerprint(raw),
+            "external_passed": passed, "held_out_pass_rate": rate,
+            "passed": passed and len(assessed) == len(results), "cases": results}
 
 
 async def _sequence(runtime: Runtime, listener: Listener, case: Case, version: str,
@@ -188,7 +280,10 @@ async def evaluate(reference: str, suite_path: Path, report_dir: Path, *,
     suite_raw = read_yaml(suite_path)
     suite = Suite.model_validate(suite_raw)
     profile = load_profile(reference)
-    if profile.fallback == "llm" and not live_model:
+    from deceive.composition import _compose
+
+    effective = _compose([profile])[0]
+    if effective.fallback == "llm" and not live_model:
         raise ValueError("Generative evaluation requires explicit --live-model and --config")
     if live_model and config_path is None:
         raise ValueError("Live-model evaluation requires --config")
@@ -199,7 +294,7 @@ async def evaluate(reference: str, suite_path: Path, report_dir: Path, *,
     for case in suite.cases:
         case_result = {"id": case.id, "group": case.group, "passed": True, "runs": []}
         try:
-            raw = profile.model_dump(mode="json")
+            raw = effective.model_dump(mode="json")
             for key, value in case.overrides.items():
                 if key not in {"identity", "behaviors", "files", "stateful", "fallback"}:
                     raise ValueError(f"Unsupported profile override: {key}")

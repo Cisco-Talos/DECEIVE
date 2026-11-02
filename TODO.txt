@@ -1,12 +1,17 @@
+* Optional Linux amd64 container builds and native CI, after the ARM64 implementation is stable.
 * DNS/NTP and additional protocol adapters, with protocol-specific limits and evaluation clients.
 * Explicit unknown-SSH-user authentication policy; preserve current wildcard behavior until implemented.
 * Reconnect persistence and shared mutable system state across services (future capabilities).
 * Offline detection/clustering and candidate CVE research/authoring modules.
 * Raw framing vulnerabilities and packet/OS fingerprint fidelity (outside current application-level scope).
 * Improve model realism for unfamiliar commands and prevent invented future inputs; identity queries and shell prompts are now deterministic.
+* Agree on a revision to the sudo refusal wording/criterion: the frozen acceptance suite currently requires the realism-breaking phrase "simulated policy".
+* HTTP/2 method case preservation/virtual proxy semantics and pre-validation HTTP/3 FIN observation, guided by capability tests before new CVE behavior (docs/protocol-capability-findings.md).
 
 Completed on codex/deception-profiles:
 * Shared runtime, bounded sessions/input/output/model calls, session-history cleanup and one-summary ownership.
 * Profile-based SSH and HTTP/HTTPS 1.1–3, direct optional SDK providers, and packaged deployment tooling.
 * Human-approved sudo CVE-2019-14287 and Apache CVE-2021-41773 profiles and acceptance suites.
 * Requirements-based profile composition, additive YAML/CLI selections, and explicit runtime validation repeated at startup.
+* Test-first vulnerability policy, non-empty acceptance assertions, dynamic bundled-CVE acceptance discovery, and bounded HTTP/2–3 wire capability probes.
+* Active assessment skill/CLI, native independent reviewer pilots, bounded SSH/HTTP drivers, Docker lifecycle, frozen criteria, checkpoints, quality/plateau policies and standalone SVG dashboards.
