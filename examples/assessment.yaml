@@ -1,5 +1,6 @@
 schema_version: 1
 # Assessment specification, not production deployment YAML.
+review_rubric: evidence-v2
 policy:
   mode: until
   max_loops: 20

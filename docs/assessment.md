@@ -55,6 +55,15 @@ mappings. This dedicated bridge is not an outbound-network sandbox. Model-backed
 target `provider`, and explicit `docker.provider_network: true`; no fake runtime
 provider is silently substituted for realism assessment.
 
+Built target images are checked against the installed runtime source fingerprints
+before deployment; a newly tagged image with a stale cached wheel is rejected.
+The standard-image check additionally verifies packaged clients and assets.
+Source-only rebuild regression testing keeps project metadata unchanged and
+checks that the installed module bytes actually change. This addresses uv's
+[local-project cache heuristic](https://docs.astral.sh/uv/concepts/cache/) while
+retaining dependency caching. Explicit `build: false` images retain their own
+recorded digest and require operator-controlled rebuilds as described above.
+
 ## Active probes
 
 Only the controller receives private manifests and logs. Give native reviewers
@@ -83,6 +92,9 @@ and body/body_base64. Redirects are not followed. Real negotiation is mandatory.
 `h2_method`, `h2_resets` (maximum eight streams), and `h3_fin` expose bounded wire
 probes; they characterize existing library behavior, not unimplemented CVEs.
 Returned body/header bytes are base64 with structured status/event facts.
+HTTP/3 clients retain cookie scope/expiry rules. A named client reconnects a closed
+QUIC transport with its existing cookie jar; the observation marks
+`transport_reconnected`. A request with uncertain completion is never silently replayed.
 
 Installed assessment drivers use the explicit spec `drivers` allowlist and the
 `deceive.assessment_drivers` entrypoint group. API version 1 instances declare
@@ -97,6 +109,18 @@ protocols through generated text.
 Run native protocol, product, attacker and consistency reviewers in fresh contexts.
 The full report/decision schemas and role briefings are in the skill references.
 Each report must match candidate/role/target and cite captured interaction IDs.
+New runs default to the frozen `review_rubric: evidence-v2`. A `score_basis`
+records the evidence band, observed facts, interaction IDs, and coverage limits.
+The controller rejects band/score mismatches and unknown score evidence. Observed
+tells require findings; limited coverage belongs in verdict confidence and the
+coverage explanation. Band midpoints anchor judgments without forcing a pass.
+Every required reviewer must capture evidence from every service and advertised
+HTTP version; an unprobed version is a coverage gap. `repeatability.json` reports
+panel-median and reviewer-score ranges only for complete assessments of the same
+candidate and comparison/rubric revision. These descriptive ranges do not prove
+improvement or replace the two-round success predicate.
+Historical reports remain readable using their recorded `legacy-v1` rubric;
+they are not reinterpreted or mixed into v2 confirmation comparisons.
 Reports without active evidence, unknown evidence or stale candidate IDs are rejected.
 Verified unresolved findings carry forward when a later reviewer misses them;
 only an evidenced controller decision resolves or rejects them. Review scores

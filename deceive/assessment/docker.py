@@ -50,7 +50,36 @@ class Docker:
             output = self.call("build", "-t", tag, str(loop_dir / "source"),
                                timeout=spec.limits.build_seconds)
             (loop_dir / "build.log").write_text(output)
-        return self.call("image", "inspect", tag, "--format", "{{.Id}}")
+        image = self.call("image", "inspect", tag, "--format", "{{.Id}}")
+        expected = {name: digest for name, digest in candidate["files"].items()
+                    if name.startswith("deceive/") and not name.startswith((
+                        "deceive/assessment/", "deceive/profiles/", "deceive/acceptance/"))
+                    and name not in {"deceive/clients.py", "deceive/evaluate.py"}}
+        attestation = self.verify_image(image, expected)
+        write_json(loop_dir / "image-attestation.json", attestation)
+        return image
+
+    def verify_image(self, image: str, expected: dict[str, str]) -> dict:
+        if not expected or any(not name.startswith("deceive/") or ".." in Path(name).parts
+                               for name in expected):
+            raise ValueError("Image attestation requires relative packaged DECEIVE paths")
+        program = """import deceive,hashlib,json,sys
+from pathlib import Path
+root=Path(deceive.__file__).parent
+observed={}
+for name in json.loads(sys.argv[1]):
+    path=root/Path(name).relative_to('deceive')
+    observed[name]=hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
+print(json.dumps(observed))
+"""
+        observed = json.loads(self.call("run", "--rm", "--network", "none", "--read-only",
+            "--entrypoint", "python", image, "-c", program, json.dumps(list(expected))))
+        mismatches = [name for name, digest in expected.items() if observed.get(name) != digest]
+        if mismatches:
+            raise RuntimeError("Installed image source differs from the candidate; rebuild the project wheel: "
+                               + ", ".join(mismatches[:10]))
+        return {"schema_version": 1, "image": image, "matched": True, "checked": len(expected),
+                "expected": expected, "observed": observed}
 
     def owned(self, container: str, run_id: str) -> None:
         label = self.call("inspect", "--format", '{{ index .Config.Labels "deceive.assessment" }}', container)

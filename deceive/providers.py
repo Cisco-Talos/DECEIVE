@@ -177,10 +177,16 @@ class SDKProvider:
         options = {"maxTokens": c.max_output_tokens}
         if c.temperature is not None:
             options["temperature"] = c.temperature
+        system = [{"text": m.content} for m in messages if m.role == "system" and m.content.strip()]
+        if any(not m.content.strip() for m in messages if m.role != "system"):
+            # Converse rejects blank text blocks; keep empty turns in their original order.
+            system.append({"text": "Transcript convention: (no textual content) represents a blank "
+                           "turn. It is metadata, never output to reproduce."})
         result = self.client.converse(
             modelId=c.model,
-            system=[{"text": m.content} for m in messages if m.role == "system"],
-            messages=[{"role": m.role, "content": [{"text": m.content}]}
+            system=system,
+            messages=[{"role": m.role, "content": [{"text": m.content if m.content.strip()
+                                                      else "(no textual content)"}]}
                       for m in messages if m.role != "system"],
             inferenceConfig=options,
         )

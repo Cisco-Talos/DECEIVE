@@ -68,6 +68,67 @@ async def test_cookie_sessions_are_private_and_client_ids_not_trusted(runtime_fa
 
 
 @pytest.mark.asyncio
+async def test_http3_client_round_trips_private_session_cookie(runtime_factory):
+    from deceive.models import Behavior
+
+    profile = load_profile("demo-http")
+    profile.stateful = True
+    profile.behaviors = [
+        Behavior(id="set", match={"path": "/set"}, transition={"flag": "yes"}, reply={"body": "set"}),
+        Behavior(id="flag", match={"path": "/flag", "state": {"flag": "yes"}}, reply={"body": "yes"}),
+    ]
+    runtime = await runtime_factory("https", profile=profile, versions=["3"])
+    udp = next(e["port"] for e in next(iter(runtime.servers.values())).endpoints if e["transport"] == "udp")
+    async with h3_connect(udp) as first, h3_connect(udp) as second:
+        initial = await first.request("GET", "/set", headers=[(b"cookie", b"session=attacker-selected")])
+        assert all(b"attacker-selected" not in v for k, v in initial.headers if k == b"set-cookie")
+        assert (await first.request("GET", "/flag")).body == b"yes"
+        assert (await second.request("GET", "/flag")).status == 404
+
+
+@pytest.mark.asyncio
+async def test_http3_cookie_path_expiry_domain_and_explicit_override(runtime_factory):
+    from deceive.models import Behavior
+
+    profile = load_profile("demo-http")
+    profile.behaviors.insert(0, Behavior(id="cookies", match={"path": "/cookies"}, reply={
+        "headers": [("set-cookie", "scoped=inside; Path=/scope; Secure"),
+                    ("set-cookie", "regular=visible; Path=/; Secure"),
+                    ("set-cookie", "expired=gone; Path=/; Max-Age=0"),
+                    ("set-cookie", "foreign=wrong; Path=/; Domain=example.invalid")]}))
+    runtime = await runtime_factory("https", profile=profile, versions=["3"])
+    udp = next(e["port"] for e in next(iter(runtime.servers.values())).endpoints if e["transport"] == "udp")
+    async with h3_connect(udp) as client:
+        await client.request("GET", "/cookies")
+        await client.request("GET", "/scope/check")
+        await client.request("GET", "/elsewhere")
+        await client.request("GET", "/manual", headers=[(b"Cookie", b"manual=1")])
+    captured = {}
+    for record in map(json.loads, runtime.test_stream.getvalue().splitlines()):
+        if record["message"] == "User input":
+            request = json.loads(b64decode(record["details"]))
+            captured[record["http_path"]] = b"; ".join(b64decode(v) for k, v in request["headers"]
+                                                     if b64decode(k) == b"cookie")
+    assert b"scoped=inside" in captured["/scope/check"]
+    assert b"regular=visible" in captured["/scope/check"]
+    assert b"expired=" not in captured["/scope/check"] and b"foreign=" not in captured["/scope/check"]
+    assert captured["/elsewhere"] == b"regular=visible"
+    assert captured["/manual"] == b"manual=1"
+
+
+@pytest.mark.asyncio
+async def test_http3_closed_transport_fails_promptly(runtime_factory):
+    runtime = await runtime_factory("https", versions=["3"])
+    udp = next(e["port"] for e in next(iter(runtime.servers.values())).endpoints if e["transport"] == "udp")
+    async with h3_connect(udp) as client:
+        await client.request("GET", "/api/status")
+        client.close()
+        await asyncio.wait_for(client.wait_closed(), 5)
+        with pytest.raises(ConnectionError, match="closed"):
+            await asyncio.wait_for(client.request("GET", "/api/status"), 0.2)
+
+
+@pytest.mark.asyncio
 async def test_http_limits_expiry_and_certificate_persistence(runtime_factory):
     profile = load_profile("demo-http")
     profile.stateful = True

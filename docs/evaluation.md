@@ -8,6 +8,7 @@ transcripts and authentication attempts; treat report directories accordingly.
 ```yaml
 schema_version: 1
 id: example
+version: "1"
 http_version: "2"
 references: []
 cases:
@@ -82,8 +83,11 @@ the scope/criteria with the human before implementing CVE behavior, record that
 agreement, and freeze the suite fingerprint throughout bounded refinement.
 
 The reference CVE criteria are [here](reference-acceptance-proposal.md), approved
-before implementation on 2026-11-01. Packaged `reference-approval.json` records the
-frozen suite fingerprints; tests and reports verify them. This agreement was a
+before implementation on 2026-11-01. Active packaged `*-approval.json` records hold
+the frozen suite fingerprints; tests and reports verify them. Sudo profile/suite
+version 2 records the human's 2026-11-02 stock-style refusal amendment, while the
+original agreement/profile/suite remain in `acceptance/history/`. Reports include
+`suite_version`; omitted versions retain the legacy value `1`. This agreement was a
 separate checkpoint from approval of the implementation plan. Unsupported engine
 capabilities, exhausted budgets, and unresolved failures
 must remain visible. Profile activation, public exposure and publication are

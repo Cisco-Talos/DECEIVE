@@ -81,9 +81,15 @@ def sudo_2019(profile: Profile, spec: Behavior, interaction: Interaction,
         else:
             break
     command = args[index:]
-    if (not command or command[0] not in {"id", "/usr/bin/id"}
+    if not command:
+        return response("usage: sudo -u user command [arg ...]\n", 1)
+    if (command[0] not in {"id", "/usr/bin/id"}
         or command[1:] not in ([], ["-u"], ["-un"])):
-        return response("sudo: command not permitted by the simulated policy\n", 1)
+        displayed = list(command)
+        if displayed[0] == "id":
+            displayed[0] = "/usr/bin/id"
+        return response(f"Sorry, user {session.username} is not allowed to execute "
+                        f"'{' '.join(displayed)}' as {target} on {profile.identity.hostname}.\n", 1)
     special = target in {"#-1", "#4294967295"}
     if target in {"root", "#0"} or (special and (options.patched or not options.runas_all)):
         return response("sudo: requested user is not permitted by policy\n", 1)

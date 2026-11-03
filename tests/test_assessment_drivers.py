@@ -88,3 +88,31 @@ async def test_external_acceptance_preserves_optional_held_out_semantics(tmp_pat
     assert report["external_passed"]
     suite.write_text(suite.read_text() + 'held_out_min_pass_rate: 1.0\n')
     assert not (await evaluate_external(suite, "http", "1.1", execute))["external_passed"]
+
+
+@pytest.mark.asyncio
+async def test_named_http3_client_reconnects_without_losing_cookie_state(runtime_factory):
+    import asyncio
+    from deceive.models import Behavior
+
+    profile = load_profile("demo-http")
+    profile.stateful = True
+    profile.behaviors = [
+        Behavior(id="set", match={"path": "/set"}, transition={"flag": "yes"}, reply={"body": "set"}),
+        Behavior(id="flag", match={"path": "/flag", "state": {"flag": "yes"}}, reply={"body": "yes"}),
+    ]
+    runtime = await runtime_factory("https", profile=profile, versions=["3"])
+    driver = Drivers()
+    target = endpoint(runtime, "https", ["3"])
+    key = ("review", "target", "service-1", "visit")
+    try:
+        first = await driver.execute(target, ProbeAction(operation="request", session="visit", parameters={"path": "/set"}), key)
+        transport = driver.registry["https"].sessions[key + ("3",)]["client"]
+        transport.close()
+        await asyncio.wait_for(transport.wait_closed(), 5)
+        async with asyncio.timeout(2):
+            result = await driver.execute(target, ProbeAction(operation="request", session="visit", parameters={"path": "/flag"}), key)
+        assert base64.b64decode(result["body_base64"]) == b"yes"
+        assert result["session_id"] == first["session_id"] and result["facts"]["transport_reconnected"]
+    finally:
+        await driver.close()

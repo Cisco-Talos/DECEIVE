@@ -96,10 +96,13 @@ def add_reviews(run, score=90):
         with (directory / "observations.jsonl").open("a") as stream:
             stream.write(json.dumps({"interaction_id": role, "target": "target-01", "role": role,
                 "candidate_id": current["candidate_id"], "protocol": "http", "body_base64": "",
+                "version": "1.1",
                 "action": {"operation": "request", "endpoint": "service-1", "parameters": {}}, "facts": {"status": 200}}) + "\n")
         engine.record_review(run, Review(candidate_id=current["candidate_id"], role=role,
             target="target-01", synthetic_confidence=100-score, verdict_confidence=70,
-            summary="Active mock review"))
+            summary="Active mock review", score_basis={"band": "no_material_tell",
+                "observations": ["Deterministic fixture exercised"], "evidence": [role],
+                "coverage_limits": "Mock orchestration only, not a live realism result"}))
 
 
 @pytest.mark.asyncio
@@ -257,6 +260,8 @@ async def test_verified_critical_findings_survive_a_panel_that_misses_them(asses
     state = load_json(run / "state.json")
     engine.record_review(run, Review(candidate_id=state["current"]["candidate_id"], role="product",
         target="target-01", synthetic_confidence=10, verdict_confidence=95, summary="Observed defect",
+        score_basis={"band": "no_material_tell", "observations": ["Fixture regression"],
+                     "evidence": ["product"], "coverage_limits": "Mock orchestration"},
         findings=[{"id": "defect", "severity": "P1", "category": "identity_or_state",
                    "description": "Contradictory identity", "expected": "Consistent identity", "evidence": ["product"]}]))
     decisions = Decisions(findings={"product/target-01/defect": {
@@ -283,4 +288,37 @@ async def test_group_review_without_every_service_has_a_coverage_gap(assessment)
     assert not result["complete"] and not result["qualified"]
     target = load_json(run / "state.json")["loops"][-1]["targets"]["target-01"]
     assert not target["coverage"]["product"]["service-2"]
+    await engine.finish(run, docker=docker)
+
+
+@pytest.mark.asyncio
+async def test_new_rubric_requires_a_captured_score_basis(assessment):
+    run, _, docker = assessment
+    await engine.begin_loop(run, docker=docker)
+    add_reviews(run)
+    state = load_json(run / "state.json")
+    report = Review(candidate_id=state["current"]["candidate_id"], role="product", target="target-01",
+                    synthetic_confidence=10, verdict_confidence=70, summary="No basis")
+    with pytest.raises(ValueError, match="rubric"):
+        engine.record_review(run, report)
+    report = Review.model_validate(report.model_dump() | {"score_basis": {
+        "band": "no_material_tell", "observations": ["Not my captured evidence"],
+        "evidence": ["another-role"], "coverage_limits": "Fixture"}})
+    with pytest.raises(ValueError, match="Score basis references"):
+        engine.record_review(run, report)
+    await engine.finish(run, docker=docker)
+
+
+@pytest.mark.asyncio
+async def test_review_must_cover_every_declared_http_version(assessment):
+    run, _, docker = assessment
+    await engine.begin_loop(run, docker=docker)
+    state = load_json(run / "state.json")
+    state["current"]["targets"]["target-01"]["endpoints"][0]["versions"] = ["1.1", "2", "3"]
+    write_json(run / "state.json", state)
+    add_reviews(run)
+    result = await engine.end_loop(run, docker=docker)
+    assert not result["complete"] and not result["qualified"]
+    target = load_json(run / "state.json")["loops"][-1]["targets"]["target-01"]
+    assert target["protocol_coverage"]["product"]["service-1"] == {"1.1": True, "2": False, "3": False}
     await engine.finish(run, docker=docker)

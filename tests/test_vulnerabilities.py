@@ -41,6 +41,17 @@ def test_bundled_cves_have_reviewed_nonempty_acceptance_contracts():
     assert exercised == set(CVE_HANDLERS), "Every registered CVE handler needs a bundled profile and suite"
 
 
+def test_sudo_v2_amendment_preserves_original_agreement_and_criteria():
+    history = files("deceive").joinpath("acceptance/history")
+    old = json.loads(history.joinpath("reference-v1-approval.json").read_text())
+    legacy = read_yaml(Path(str(history.joinpath("sudo-2019-14287-v1.yaml"))))
+    assert fingerprint(legacy) == old["suites"]["sudo-2019-14287"] == "70e537d51458f9b372493c4bb86c792a8d2b67de5348f13e565190add298047a"
+    assert old["approved_on"] == "2026-11-01" and "apache-2021-41773" in old["suites"]
+    approval = approval_for("sudo-2019-14287")
+    assert approval["profile_version"] == approval["suite_version"] == "2"
+    assert load_profile("sudo-2019-14287").version == "2"
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("name", bundled_vulnerabilities())
 async def test_approved_reference_acceptance_suite(tmp_path, name):
@@ -85,11 +96,32 @@ async def test_sudo_uses_virtual_identity_and_rejects_shell_execution(runtime_fa
     async with asyncssh.connect("127.0.0.1", port=port, username="guest", known_hosts=None) as connection:
         result = await connection.run(f"sudo -u#-1 /bin/sh -c 'touch {marker}'")
         assert result.exit_status == 1
-        assert "not permitted" in result.stdout
+        assert "not allowed to execute" in result.stdout
     assert not marker.exists()
     async with asyncssh.connect("127.0.0.1", port=port, username="intruder", password="x", known_hosts=None) as connection:
         result = await connection.run("sudo -u#-1 id -u")
         assert result.exit_status == 1 and "not in the sudoers" in result.stdout
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("command", "rendered"), [
+    ("sudo -u#-1 /bin/sh", "/bin/sh"),
+    ("sudo -u#-1 id --user", "/usr/bin/id --user"),
+    ("sudo --user='#4294967295' /usr/bin/id -ru", "/usr/bin/id -ru"),
+])
+async def test_sudo_denial_uses_virtual_stock_style_facts(runtime_factory, command, rendered):
+    profile = load_profile("sudo-2019-14287")
+    profile.identity.hostname = "audit-host-09"
+    profile.files["/etc/hostname"] = "audit-host-09\n"
+    runtime = await runtime_factory("ssh", profile=profile)
+    port = next(iter(runtime.servers.values())).endpoints[0]["port"]
+    async with asyncssh.connect("127.0.0.1", port=port, username="guest", known_hosts=None) as client:
+        result = await client.run(command)
+    target = "#4294967295" if "4294967295" in command else "#-1"
+    assert result.exit_status == 1
+    assert result.stdout == (f"Sorry, user guest is not allowed to execute '{rendered}' "
+                             f"as {target} on audit-host-09.\n")
+    assert "simulat" not in result.stdout.lower()
 
 
 def test_cve_options_are_validated_before_listening():

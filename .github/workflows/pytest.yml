@@ -38,4 +38,4 @@ jobs:
         run: uv sync --frozen --all-extras --python ${{ matrix.python-version }}
 
       - name: Run tests
-        run: uv run --frozen --all-extras pytest
+        run: uv run --frozen --all-extras --python ${{ matrix.python-version }} pytest

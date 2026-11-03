@@ -4,7 +4,6 @@ import asyncio
 import base64
 from contextlib import AsyncExitStack
 from importlib.metadata import entry_points
-from http.cookies import SimpleCookie
 import json
 import ssl
 from typing import Protocol
@@ -163,6 +162,11 @@ class HTTPDriver:
             raise ValueError("Probe headers exceed bounds")
         session_key = key + (version,)
         session = self.sessions.get(session_key)
+        previous = None
+        if version == "3" and session and session["client"].terminated:
+            previous = self.sessions.pop(session_key)
+            await asyncio.wait_for(previous["stack"].aclose(), 5)
+            session = None
         if not session:
             stack = AsyncExitStack()
             if version == "3":
@@ -173,19 +177,16 @@ class HTTPDriver:
                     base_url=f'{endpoint["protocol"]}://127.0.0.1:{port}', verify=False,
                     http1=version == "1.1", http2=version == "2", trust_env=False,
                     follow_redirects=False, timeout=endpoint.get("timeout", 35)))
-            session = {"stack": stack, "client": client, "id": "client-" + uuid.uuid4().hex, "cookies": {}}
+            session = {"stack": stack, "client": client, "id": "client-" + uuid.uuid4().hex}
+            if previous:
+                client.cookies = previous["client"].cookies
+                session["id"] = previous["id"]
             self.sessions[session_key] = session
         try:
             if version == "3":
-                if session["cookies"] and not any(k.lower() == b"cookie" for k, _ in headers):
-                    headers.append((b"cookie", "; ".join(k + "=" + v for k, v in session["cookies"].items()).encode()))
-                result = await session["client"].request(p.get("method", "GET"), path, body, headers)
+                result = await session["client"].request(p.get("method", "GET"), path, body, headers,
+                                                         timeout=endpoint.get("timeout", 35))
                 actual, data, received, status = result.version, result.body, result.headers, result.status
-                for k, v in received:
-                    if k.lower() == b"set-cookie":
-                        cookie = SimpleCookie()
-                        cookie.load(v.decode("latin-1"))
-                        session["cookies"].update({k: v.value for k, v in cookie.items()})
             else:
                 result = await session["client"].request(p.get("method", "GET"), path, content=body, headers=headers)
                 actual = {"HTTP/1.1": "1.1", "HTTP/2": "2"}.get(result.http_version, result.http_version)
@@ -196,8 +197,8 @@ class HTTPDriver:
                 raise ValueError("HTTP observation exceeds 1 MiB")
             return {"version": actual, "session_id": session["id"], "body_base64": encode(data),
                     "headers": [(encode(k), encode(v)) for k, v in received],
-                    "facts": {"status": status, "cookies": list(session["client"].cookies.keys())
-                              if version != "3" else []}}
+                    "facts": {"status": status, "cookies": list(session["client"].cookies.keys()),
+                              "transport_reconnected": previous is not None}}
         finally:
             if action.session is None:
                 self.sessions.pop(session_key, None)
@@ -233,7 +234,7 @@ class Drivers:
         try:
             async with asyncio.timeout(endpoint.get("timeout", 35)):
                 return await self.registry[protocol].execute(endpoint, action, key)
-        except (TimeoutError, asyncio.CancelledError):
+        except (TimeoutError, asyncio.CancelledError, ConnectionError):
             await self.registry[protocol].execute(endpoint, ProbeAction(operation="close"), key)
             raise
 

@@ -5,6 +5,8 @@ import asyncio
 from dataclasses import dataclass
 import ssl
 
+import httpx
+
 from aioquic.asyncio import QuicConnectionProtocol, connect
 from aioquic.h3.connection import H3_ALPN, H3Connection
 from aioquic.h3.events import DataReceived, HeadersReceived
@@ -26,27 +28,42 @@ class H3Client(QuicConnectionProtocol):
         self.http = H3Connection(self._quic)
         self.pending: dict[int, asyncio.Future] = {}
         self.responses: dict[int, tuple[list, bytearray]] = {}
+        self.cookies = httpx.Cookies()
+        self.terminated = False
 
     async def request(self, method: str, path: str, body: bytes = b"",
-                      headers: list[tuple[bytes, bytes]] | None = None) -> HTTPResult:
+                      headers: list[tuple[bytes, bytes]] | None = None,
+                      *, timeout: float = 30) -> HTTPResult:
+        if self.terminated:
+            raise ConnectionError("HTTP/3 connection has closed; open a new transport")
+        forwarded = [(name.lower(), value) for name, value in headers or []]
+        request = httpx.Request(method, "https://localhost" + path, headers=forwarded)
+        self.cookies.set_cookie_header(request)
+        if not any(name.lower() == b"cookie" for name, _ in forwarded):
+            forwarded.extend((k.lower(), v) for k, v in request.headers.raw if k.lower() == b"cookie")
         stream = self._quic.get_next_available_stream_id()
         future = asyncio.get_running_loop().create_future()
         self.pending[stream] = future
         self.responses[stream] = ([], bytearray())
         self.http.send_headers(stream, [(b":method", method.encode()), (b":scheme", b"https"),
                                        (b":authority", b"localhost"), (b":path", path.encode())]
-                               + list(headers or []), end_stream=not body)
+                               + forwarded, end_stream=not body)
         if body:
             self.http.send_data(stream, body, end_stream=True)
         self.transmit()
         try:
-            return await asyncio.wait_for(future, 10)
+            result = await asyncio.wait_for(future, timeout)
+            response = httpx.Response(result.status, headers=[(k, v) for k, v in result.headers
+                                      if not k.startswith(b":")], request=request)
+            self.cookies.extract_cookies(response)
+            return result
         finally:
             self.pending.pop(stream, None)
             self.responses.pop(stream, None)
 
     def quic_event_received(self, event) -> None:
         if isinstance(event, ConnectionTerminated):
+            self.terminated = True
             for future in self.pending.values():
                 if not future.done():
                     future.set_exception(ConnectionError("HTTP/3 connection terminated"))

@@ -159,6 +159,10 @@ unless a listener selects one.
 - Bedrock: optional `region`, `aws_profile`, and `endpoint`; use the AWS standard
   credential chain, including mounted `AWS_SHARED_CREDENTIALS_FILE` or workload
   credentials. `api_key_env`/`api_key_file` are not AWS credential configuration.
+  Select an appropriate model or inference-profile ID through `model`. Blank
+  conversation turns are represented as metadata only in the outgoing Converse
+  request, because Bedrock rejects empty text blocks; stored transcripts and
+  logged output retain their original content.
 
 For non-AWS providers, `api_key_env` selects a named environment variable and
 `api_key_file` selects a mounted UTF-8 secret file. Secret-file content takes

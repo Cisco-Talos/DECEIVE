@@ -9,7 +9,7 @@ persistent deployment was performed.
 ## Tests and acceptance
 
 - Original SSH baseline: 26 tests passed. Assessment baseline: **105 tests passed**.
-- Final deterministic suite: **132 tests passed** in 35.85 seconds on Darwin arm64,
+- Current deterministic suite: **153 tests passed** in 45.70 seconds on Darwin arm64,
   Python 3.11.15. This includes actual SSH, HTTP/1.1, HTTP/2 multiplexing, HTTP/3,
   binary content, authentication modes, isolated state, key reuse, migration,
   resource/deadline handling, startup rollback, observer failures, and offline
@@ -37,10 +37,12 @@ persistent deployment was performed.
   semantics, missing telemetry checks, disappearing critical findings and partial
   group coverage. Real Docker integration exposed nullable staging and
   content-derived listener names breaking profile-only reuse; both were repaired.
-- Both reference CVEs were approved on 2026-11-01 before implementation. All
-  **17 acceptance cases** pass: 9 sudo cases and 8 Apache cases, including all
-  held-out variations. Their suite fingerprints are frozen in
-  `deceive/acceptance/reference-approval.json` and checked by tests and artifacts.
+- Both reference CVEs were approved on 2026-11-01 before implementation. The
+  human-selected sudo v2 amendment on 2026-11-02 replaces the simulation-disclosing
+  denial and adds controls while preserving the original approval/profile/suite
+  history. All **20 current acceptance cases** pass: 12 sudo cases and 8 Apache
+  cases, including held-out variations. Active agreement records and frozen
+  fingerprints ship under `deceive/acceptance/` and are checked by tests/artifacts.
 - The model-free combined reference deployment was tested with concurrent SSH
   and HTTP clients and one summary per independently identified session.
 - The ARM64 standard container built and passed the full smoke script. Tests
@@ -62,7 +64,7 @@ persistent deployment was performed.
 No ordinary test or acceptance run called a live runtime LLM provider or ran
 vulnerable software. Native reviewer agents performed the separate active panels.
 
-## Active assessment pilot
+## Initial active assessment pilot (historical)
 
 Two fresh panels of four native agents actively probed sudo and Apache separately,
 their reference deployment group, and a controller-only calibration target.
@@ -82,9 +84,10 @@ quality success. No production target met the two-round ≥85 requirement.
 
 The first panel identified sudo's literal “simulated policy” refusal as a P2
 realism defect, on both standalone and grouped targets. The frozen acceptance
-suite requires that exact wording. It remains unresolved pending a separately
-agreed criteria amendment. No profile behavior or frozen criterion was changed.
-The median changes reflect reviewer variance, not a claimed realism repair.
+suite required that exact wording. No profile behavior or frozen criterion was
+changed during that pilot. The median changes reflect reviewer variance, not a
+claimed realism repair. The later human-approved v2 amendment and fresh panels
+below resolve this finding without rewriting the historical evidence.
 
 Harness repairs between and after panels include candidate confirmation, suite
 semantics, retry telemetry isolation, retained-resource continuation, stable
@@ -102,6 +105,60 @@ two loops with real SSH and HTTP/1.1–3, binary/acceptance assertions, group co
 profile-only reuse and ownership-scoped teardown. Server/client/profile cache
 classification is separately covered by deterministic fingerprint tests.
 
+## Stabilization assessment
+
+The [stabilization record](stabilization.md) documents the versioned sudo
+amendment, native authoring exercise and three additional active rounds, with
+60 validated independent reports under the versioned `evidence-v2` rubric.
+The first round exposed a rebuilt container retaining an old project wheel.
+Installed-source verification and a metadata-identical, source-only warm-cache
+rebuild regression now detect/prevent that failure. Its failed gate and original
+reviewer evidence remain recorded.
+
+The final two rounds assessed an unchanged candidate. Sudo, Apache, their
+reference group and the authored HTTP/2–3 application each achieved median
+realism **90** twice, with passing correctness/telemetry and no unresolved
+verified P0/P1 findings. Every role covered every advertised service/version.
+All four reviewers detected the separate deliberate version contradiction in
+each round; it is excluded from quality scoring. The run ended `quality_success`.
+Scores describe bounded reviewer observations, not measured fidelity percentages.
+
+The native authoring exercise froze criteria before behavior and demonstrated
+genuine red runs. Its final profile passes 9/9 cases on HTTP/2 and 9/9 on HTTP/3
+after repairs to shared cookie handling. The HTTP/3 driver also reconnects closed
+idle transports while preserving private cookie state, without replaying
+uncertain requests. Focused regressions and the full suite pass.
+
+Current evidence and the visually inspected dashboard are under ignored
+`results/stabilization-20261102/`. Its five assessment containers are stopped and
+retained. Remote ARM64 CI awaits draft-PR approval. The 2026-11-03 Bedrock check
+below completes the separate native live-provider integration gate; it does not
+refresh historical native realism-panel scores after source changes.
+
+## Live Bedrock SSH integration — 2026-11-03
+
+A local deployment YAML reused existing configurable `aws_profile`, `region`,
+`model`, temperature, token-limit and deadline fields. It selected the active US
+Sonnet 4.6 inference profile via `us-east-1`; credentials remained in the AWS
+credential chain. The listener bound only `127.0.0.1` on an ephemeral port.
+
+The first run exposed rejection of empty Converse history turns after a silent
+command. Failed mocked regressions preceded the metadata-only serialization
+repair, which preserves original transcript content and role order. Summary
+regressions also preceded support for final bold judgement labels, with unknown
+or non-final labels still producing UNKNOWN. The full deterministic suite passes.
+
+The repeated explicit live run passed 17 checks with eight model calls across
+three SSH sessions, reporting 3,121 input and 318 output tokens. It covered
+interactive/non-interactive behavior, stable identity, private generative
+history, working-directory facts, summaries, base64 logs and cleanup. See the
+[detailed stabilization addendum](stabilization.md#live-bedrock-ssh-addendum--2026-11-03).
+The local runner trims surrounding whitespace for generated-text assertions;
+raw output and its omitted final newlines remain recorded as fidelity work.
+These bounded observations establish integration, not general realism or exact
+terminal byte fidelity. Local evidence is under ignored
+`results/bedrock-ssh-20261103/`; no persistent listener remains.
+
 ## Container measurements
 
 Docker Engine 29.9.2 runs Linux/aarch64 on this workstation. ARM64 is the only
@@ -111,13 +168,15 @@ performance promises.
 
 | Artifact | Docker-reported stored bytes after unpacking | Ready time | Packages |
 | --- | ---: | ---: | ---: |
-| `deceive:assessment-arm64` (native) | 383,877,984 | 1.559 s | 50 |
+| `deceive:bedrock-ssh-arm64` (native) | 383,944,508 | 2.447 s | 50 |
 
 Ready time measures container creation/start through the local health probe with
 an existing image and a new data volume. It excludes image pulling. Stored image
 size is measured after first unpacking, so lazy-unpacked foreign images are not
 incorrectly compared using compressed content alone; it is not a download size.
-The standard-image and assessment-lifecycle checks ran concurrently on this workstation.
+The standard image also verifies installed source/assets against 46 expected
+files. A separate warm-cache rebuild changes only copied Python source while
+retaining identical build metadata, then verifies the changed installed bytes.
 
 Container smoke tests removed their disposable containers and volumes. Built
 images remain available locally under the tags above. The GitHub workflow builds
@@ -128,10 +187,10 @@ triggered or published as part of this work.
 
 | Measurement | Result |
 | --- | ---: |
-| Wheel, excluding dependencies | 91,316 bytes |
+| Wheel, excluding dependencies | 98,497 bytes |
 | Installed packages without provider extras | 29 |
-| Installation using available cached dependencies | 0.243 s |
-| Fresh process startup to readiness | 0.212 s |
+| Installation using available cached dependencies | 0.241 s |
+| Fresh process startup to readiness | 0.167 s |
 
 The source lockfile has **57 packages**, including all optional provider SDKs and
 test dependencies, versus 131 before this change. PyTorch, Transformers,

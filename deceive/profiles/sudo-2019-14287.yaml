@@ -1,6 +1,6 @@
 schema_version: 1
 id: sudo-2019-14287
-version: "1"
+version: "2"
 description: Defined CLI interactions for the sudo special-UID policy bypass.
 protocol: ssh
 requirements:
@@ -30,7 +30,9 @@ fallback_reply: {body: "sh: command not found\n", exit_status: 127}
 references:
   - https://seclists.org/oss-sec/2019/q4/18
   - https://www.sudo.ws/alerts/minus_1_uid.html
+  - https://github.com/sudo-project/sudo/blob/SUDO_1_8_27/plugins/sudoers/logging.c#L303-L309
 limitations:
   - Only sudo version/list probes and the declared id command family are emulated.
   - Group fields are simulation fixtures; only the documented effective-UID bypass is claimed.
   - No shell execution, persistent root shell, PAM behavior, or arbitrary binaries.
+  - Refusals use stock-sudo-style wording with virtual facts; complete option parsing, PATH lookup and separate stderr fidelity are not claimed.

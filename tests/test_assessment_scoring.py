@@ -50,3 +50,31 @@ def test_review_requires_evidence_and_distinct_confidences():
     with pytest.raises(ValueError):
         Review.model_validate(valid | {"findings": [{"id": "f", "severity": "P1",
             "category": "identity_or_state", "description": "Mismatch", "expected": "Same", "evidence": []}]})
+
+
+def test_evidence_rubric_band_must_match_score_and_findings():
+    report = {"candidate_id": "c", "role": "product", "target": "target-1",
+              "synthetic_confidence": 10, "verdict_confidence": 70, "summary": "Scoped behavior held",
+              "score_basis": {"band": "no_material_tell", "observations": ["Positive and negative controls matched claims"],
+                              "evidence": ["interaction-1"], "coverage_limits": "Only declared application scope tested"}}
+    assert Review.model_validate(report).score_basis.band == "no_material_tell"
+    with pytest.raises(ValueError, match="band"):
+        Review.model_validate(report | {"synthetic_confidence": 90})
+    with pytest.raises(ValueError, match="finding"):
+        Review.model_validate(report | {"synthetic_confidence": 30, "score_basis":
+            report["score_basis"] | {"band": "minor_tell"}})
+
+
+def test_repeatability_only_compares_complete_unchanged_candidates():
+    from deceive.assessment.scoring import repeatability
+
+    rows = [row(82), row(84), row(99, candidate="changed"), row(1, complete=False)]
+    for item in rows:
+        target = item["targets"]["target-1"]
+        target["scores"] = {"product": target["median"]}
+    result = repeatability(rows)
+    unchanged = next(c for c in result["candidates"] if c["candidate_id"] == "same")
+    target = unchanged["targets"]["target-1"]
+    assert target["assessments"] == 2
+    assert target["panel_median_range"] == [82, 84]
+    assert target["reviewer_ranges"]["product"] == [82, 84]

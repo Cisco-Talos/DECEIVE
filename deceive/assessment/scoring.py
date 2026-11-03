@@ -14,6 +14,30 @@ def target_score(reviews: list[dict], required: list[str]) -> dict:
             "spread": max(values) - min(values) if values else None}
 
 
+def repeatability(loops: list[dict]) -> dict:
+    groups = {}
+    for loop in loops:
+        key = loop["candidate_id"], loop["comparison_id"]
+        group = groups.setdefault(key, {})
+        for handle, target in loop["targets"].items():
+            if target.get("complete", loop["complete"]) and target.get("median") is not None:
+                group.setdefault(handle, []).append(target)
+    candidates = []
+    for (candidate, comparison), groups_by_target in groups.items():
+        targets = {}
+        for handle, values in groups_by_target.items():
+            medians = [v["median"] for v in values]
+            roles = {role for v in values for role in v.get("scores", {})}
+            ranges = {role: [min(scores), max(scores)] for role in sorted(roles)
+                      if (scores := [v["scores"][role] for v in values if role in v.get("scores", {})])}
+            targets[handle] = {"assessments": len(values), "panel_median_range": [min(medians), max(medians)],
+                               "reviewer_ranges": ranges,
+                               "calibration": values[-1].get("calibration", False)}
+        candidates.append({"candidate_id": candidate, "comparison_id": comparison, "targets": targets})
+    return {"schema_version": 1, "candidates": candidates,
+            "interpretation": "Descriptive repeatability on identical candidates/rubrics; not a confidence interval or repair claim"}
+
+
 def quality_confirmed(loops: list[dict], policy: Policy) -> bool:
     same = loops[-policy.confirmations:]
     return (len(same) == policy.confirmations and all(l["qualified"] for l in same)

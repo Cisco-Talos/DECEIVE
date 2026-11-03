@@ -7,7 +7,8 @@ from statistics import median
 import time
 import textwrap
 
-from deceive.assessment.workspace import load_json
+from deceive.assessment.workspace import load_json, write_json
+from deceive.assessment.scoring import repeatability
 
 COLORS = {"protocol": "#7c3aed", "product": "#0284c7", "attacker": "#ea580c", "consistency": "#059669"}
 
@@ -17,6 +18,8 @@ def render(run: Path) -> Path:
     loops = state["loops"][-20:]
     handles = sorted({h for loop in loops for h in loop["targets"]})
     notes = []
+    repetitions = repeatability(state["loops"])
+    write_json(run / "repeatability.json", repetitions)
     if loops:
         latest = loops[-1]
         history_findings = {f["key"]: f for loop in state["loops"] for f in loop["findings"]}
@@ -34,6 +37,12 @@ def render(run: Path) -> Path:
         for loop in loops:
             for progress in loop.get("progress", []):
                 notes.extend(textwrap.wrap(f'Loop {loop["loop"]} fix/progress: {progress}', width=142))
+        for candidate in repetitions["candidates"]:
+            for handle, repeated in candidate["targets"].items():
+                if repeated["assessments"] >= 2:
+                    low, high = repeated["panel_median_range"]
+                    notes.append(f'{handle}: {repeated["assessments"]} unchanged-candidate assessments '
+                                 f'({candidate["candidate_id"][:12]}); panel median range {low:g}–{high:g}')
     height = 1195 + len(handles) * 42 + len(notes) * 19
     parts = [f'<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="{height}" viewBox="0 0 1280 {height}">',
              '<rect width="100%" height="100%" fill="#f8fafc"/>']
@@ -60,7 +69,7 @@ def render(run: Path) -> Path:
     status = state.get("stop_reason") or state["phase"]
     text(42, 80, f'{state["run_id"]} · {status} · {len(state["loops"])} completed loops', 17)
     text(42, 108, "Realism: higher is better. Panel median is not reviewer confidence or measured fidelity.")
-    text(42, 135, "Native-agent cost: unavailable unless reported · Calibration controls scored separately")
+    text(42, 135, f'Rubric {state["spec"].get("review_rubric", "legacy-v1")} · Native-agent cost: unavailable · Calibration controls scored separately')
     if state.get("final_candidate_fresh") is False:
         text(42, 157, "Working tree changed since assessment; historical scores do not qualify the current tree.", 13, "#b45309")
     threshold = state["spec"]["policy"]["minimum_realism"]

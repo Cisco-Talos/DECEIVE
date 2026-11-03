@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "approved_on": "2026-11-02",
+  "approval": "Human selected stock-sudo-style denial instead of the minimal replacement in the stabilization chat, before behavior implementation. All existing privilege and execution restrictions remain.",
+  "criteria": "docs/reference-acceptance-proposal.md",
+  "profile_version": "2",
+  "suite_version": "2",
+  "supersedes": "history/reference-v1-approval.json",
+  "suites": {
+    "sudo-2019-14287": "e2470cdd29f98f47eb63a7754f7dd3d93f764ae73d9771c476966b28cd3b39d9"
+  }
+}

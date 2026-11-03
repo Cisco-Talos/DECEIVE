@@ -65,6 +65,7 @@ class Spec(Model):
     providers: dict[str, ProviderConfig] = Field(default_factory=dict)
     drivers: list[str] = Field(default_factory=list)
     roles: list[Role] = Field(default_factory=lambda: list(ROLES))
+    review_rubric: Literal["legacy-v1", "evidence-v2"] = "evidence-v2"
 
     @model_validator(mode="after")
     def selected(self) -> Spec:
@@ -119,6 +120,13 @@ class Finding(Model):
     proposed_owner: str = ""
 
 
+class ScoreBasis(Model):
+    band: Literal["no_material_tell", "minor_tell", "mixed", "major_contradiction", "direct_disclosure"]
+    observations: list[str] = Field(min_length=1, max_length=30)
+    evidence: list[str] = Field(min_length=1, max_length=100)
+    coverage_limits: str = Field(min_length=1, max_length=6000)
+
+
 class Review(Model):
     schema_version: Literal[1] = 1
     candidate_id: str
@@ -129,11 +137,20 @@ class Review(Model):
     summary: str = Field(min_length=1, max_length=20000)
     findings: list[Finding] = Field(default_factory=list, max_length=100)
     usage: dict[str, float] | None = None
+    score_basis: ScoreBasis | None = None
 
     @model_validator(mode="after")
     def unique_findings(self) -> Review:
         if len({f.id for f in self.findings}) != len(self.findings):
             raise ValueError("Finding IDs must be unique within a review")
+        if self.score_basis:
+            from deceive.assessment.rubric import BANDS
+            low, high, _ = BANDS[self.score_basis.band]
+            if not (low <= self.synthetic_confidence <= high and
+                    (low == 0 or self.synthetic_confidence > low)):
+                raise ValueError("Synthetic confidence falls outside the selected evidence band")
+            if self.score_basis.band != "no_material_tell" and not self.findings:
+                raise ValueError("An observed-tell score band requires an evidence-backed finding")
         return self
 
 

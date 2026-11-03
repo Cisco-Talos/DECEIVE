@@ -8,7 +8,7 @@ COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --all-extras --no-dev --no-install-project
 COPY README.md LICENSE ./
 COPY deceive ./deceive
-RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --all-extras --no-dev --no-editable
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --all-extras --no-dev --no-editable --reinstall-package deceive
 
 FROM python:3.11-slim-bookworm AS runtime
 RUN groupadd --gid 10001 deceive && useradd --uid 10001 --gid deceive --no-create-home deceive \

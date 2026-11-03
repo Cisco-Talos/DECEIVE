@@ -70,6 +70,7 @@ class Case(Model):
 class Suite(Model):
     schema_version: Literal[1] = 1
     id: str
+    version: str = Field(default="1", min_length=1)
     http_version: Literal["1.1", "2", "3"] = "1.1"
     held_out_min_pass_rate: float | None = Field(default=None, ge=0, le=1)
     references: list[str] = Field(default_factory=list)
@@ -189,7 +190,8 @@ async def evaluate_external(suite_path: Path, protocol: str, version: str,
     passed = bool(assessed) and all(c["passed"] for c in required)
     if suite.held_out_min_pass_rate is not None and held_out:
         passed = passed and rate >= suite.held_out_min_pass_rate
-    return {"schema_version": 1, "suite_id": suite.id, "suite_fingerprint": fingerprint(raw),
+    return {"schema_version": 1, "suite_id": suite.id, "suite_version": suite.version,
+            "suite_fingerprint": fingerprint(raw),
             "external_passed": passed, "held_out_pass_rate": rate,
             "passed": passed and len(assessed) == len(results), "cases": results}
 
@@ -343,6 +345,7 @@ async def evaluate(reference: str, suite_path: Path, report_dir: Path, *,
     if suite.held_out_min_pass_rate is not None:
         passed = passed and rate is not None and rate >= suite.held_out_min_pass_rate
     report = {"schema_version": 1, "profile_id": profile.id, "suite_id": suite.id,
+              "suite_version": suite.version,
               "timestamp": datetime.now(timezone.utc).isoformat(), "passed": passed,
               "profile_fingerprint": fingerprint(profile), "suite_fingerprint": fingerprint(suite_raw),
               "live_model": live_model, "provider": provider_metadata, "total_cases": len(results),

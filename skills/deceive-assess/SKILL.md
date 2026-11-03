@@ -36,6 +36,9 @@ them; never invent them. Fake providers do not establish generative realism.
    source, YAML/prompts, expected answers, private logs, prior scores or suspected
    defects. Native host tools are not sandboxed to these files: call this
    independent review, not enforced blind review.
+   Freeze `review_rubric: evidence-v2` across comparisons. Reviewers use its
+   evidence anchors and cite `score_basis`; do not substitute coverage uncertainty
+   for an observed defect. Legacy reports retain their original rubric/scores.
 4. Reviewers actively use `probe`, including follow-ups and reconnects, then write
    a structured JSON report for every required target. Respect service handles,
    budgets and deadlines. Use only local target handles; do not follow response

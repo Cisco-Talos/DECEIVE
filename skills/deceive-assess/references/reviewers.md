@@ -44,11 +44,35 @@ inconsistency matters even if the service otherwise looks convincing. Verify
 prerequisites, visible effects, private state and independent connection identity.
 Do not use impressions such as too clean/linear without observable evidence.
 
-Score `synthetic_confidence` 0–100: 0–20 indistinguishable on available evidence,
-21–40 mostly realistic, 41–60 mixed, 61–80 likely synthetic, 81–100 confidently
-synthetic. Lower is better. Separately report `verdict_confidence` 0–100: confidence
-in your assessment. The controller derives realism as 100 minus synthetic confidence.
-These are judgments, not objective probabilities or fidelity percentages.
+Use the frozen `evidence-v2` rubric from the public briefing. Before scoring,
+probe ordinary behavior, the declared positive behavior and nearest negative
+control, a nearby unsupported variation, and a repeat or independent connection.
+Check private state where claimed, every service in a deployment group, and every
+listed HTTP version (select `parameters.version` explicitly). Add
+your role's specialized probes within the same budget. Record missing coverage.
+
+Choose `synthetic_confidence` from observed, in-scope evidence:
+
+| Band | Score | Evidence anchor |
+| --- | --- | --- |
+| `no_material_tell` | 0–20 | No material tell in captured probes |
+| `minor_tell` | >20–40 | Localized reproducible tell; core behavior remains coherent |
+| `mixed` | >40–60 | Substantial workflow contradiction or several moderate inconsistencies |
+| `major_contradiction` | >60–80 | Repeated major contradictions break declared behavior |
+| `direct_disclosure` | >80–100 | Direct simulation disclosure or evidenced impossible core claim |
+
+Use the band midpoint (10, 30, 50, 70, 90) unless cited observations justify a
+different position within it. Never choose a score to reach a passing threshold.
+An observed-tell band requires a finding; cite your own captured interactions in
+`score_basis`. Limited coverage reduces `verdict_confidence` and must be explained
+in `coverage_limits`; it does not invent a synthetic tell. Unclaimed features and
+the reviewer's own tool failures do not count as product contradictions.
+Use substantive request/response interaction IDs for score and finding evidence;
+cleanup `close` IDs cannot establish an observed behavior.
+
+Lower synthetic confidence is better. Separately report `verdict_confidence`
+0–100: confidence in your assessment. Realism is 100 minus synthetic confidence.
+These judgments are not objective probabilities or fidelity percentages.
 
 Return one JSON object per target using this shape:
 
@@ -58,10 +82,24 @@ Return one JSON object per target using this shape:
   "candidate_id": "FROM_PUBLIC_BRIEFING",
   "role": "product",
   "target": "target-01",
-  "synthetic_confidence": 20,
+  "synthetic_confidence": 10,
   "verdict_confidence": 75,
   "summary": "Evidence-based assessment and coverage limits",
-  "findings": [{
+  "score_basis": {
+    "band": "no_material_tell",
+    "observations": ["Declared positive and negative behavior remained coherent"],
+    "evidence": ["interaction-ID_FROM_YOUR_PROBE"],
+    "coverage_limits": "Explain the boundaries of what you actually tested"
+  },
+  "findings": []
+}
+```
+
+When a real tell is observed, select its evidence band and matching score, and
+add a finding with this shape (use actual values and captured evidence):
+
+```json
+{
     "id": "version_mismatch",
     "severity": "P1",
     "category": "vulnerability_semantics",
@@ -70,7 +108,6 @@ Return one JSON object per target using this shape:
     "expected": "Expected behavior and why",
     "reference": "Primary source URL where applicable",
     "proposed_owner": "base profile / protocol / behavior / unknown"
-  }]
 }
 ```
 

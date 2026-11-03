@@ -108,6 +108,7 @@ async def start_broker(run: Path, state: dict) -> None:
 
 
 def public_state(state: dict) -> dict:
+    from deceive.assessment.rubric import briefing
     current = state.get("current")
     targets = {}
     if current:
@@ -122,6 +123,7 @@ def public_state(state: dict) -> dict:
             "loop": current["number"] if current else len(state["loops"]),
             "targets": targets, "limits": state["spec"]["limits"],
             "stop_reason": state.get("stop_reason"),
+            "review_rubric": briefing() if state["spec"].get("review_rubric") == "evidence-v2" else {"id": "legacy-v1"},
             "session_reset_on_resume": bool(current and current.get("session_reset_on_resume")),
             "action_examples": {
                 "ssh": {"operation": "exec", "endpoint": "service-1", "session": "visit",
@@ -136,6 +138,7 @@ async def begin_loop(run: Path, *, retry: bool = False, docker: Docker | None = 
     with locked(run):
         state = load_json(run / "state.json")
         spec = Spec.model_validate(state["spec"])
+        state["spec"] = spec.model_dump(mode="json")
         claim_repository(run, state)
         if state["phase"] == "finished" or (state.get("stop_reason") and not retry):
             raise ValueError("Run reached its exit condition; finish it or prepare a new run")
@@ -320,6 +323,10 @@ def record_review(run: Path, report: Review) -> dict:
                     and o["target"] == report.target and o["action"]["operation"] != "close"}
         if not evidence:
             raise ValueError("A review needs active interaction evidence for this role/target")
+        if state["spec"].get("review_rubric") == "evidence-v2" and report.score_basis is None:
+            raise ValueError("The evidence-v2 rubric requires a score_basis with captured evidence")
+        if report.score_basis and not set(report.score_basis.evidence).issubset(evidence):
+            raise ValueError("Score basis references unknown or another reviewer's evidence")
         for finding in report.findings:
             if not set(finding.evidence).issubset(evidence):
                 raise ValueError("Finding references unknown or another reviewer's evidence")
@@ -381,8 +388,18 @@ async def end_loop(run: Path, decisions: Decisions | None = None, *, plateau_con
                 and (o["action"].get("endpoint") == service or
                      (len(services) == 1 and not o["action"].get("endpoint")))
                 for o in observations) for service in services} for role in roles}
+            protocol_coverage = {role: {endpoint["id"]: {version: any(
+                o["role"] == role and o["target"] == handle and not o.get("error")
+                and o.get("version") == version and o["action"]["operation"] != "close"
+                and (o["action"].get("endpoint") == endpoint["id"] or
+                     (len(services) == 1 and not o["action"].get("endpoint")))
+                for o in observations) for version in endpoint["versions"]}
+                for endpoint in entry.get("endpoints", []) if endpoint["protocol"] in {"http", "https"}}
+                for role in roles}
             score["complete"] = score["complete"] and bool(services) and all(
-                all(seen.values()) for seen in coverage.values())
+                all(seen.values()) for seen in coverage.values()) and all(
+                all(versions.values()) for services_by_role in protocol_coverage.values()
+                for versions in services_by_role.values())
             critical = False
             for review in reviews:
                 for finding in review["findings"]:
@@ -421,7 +438,7 @@ async def end_loop(run: Path, decisions: Decisions | None = None, *, plateau_con
             target_result = score | {"qualified": bool(qualified), "correctness": correctness,
                 "telemetry": telemetry, "profiles": entry.get("profiles", []),
                 "calibration": entry.get("calibration", False), "disagreement": disagreement,
-                "coverage": coverage}
+                "coverage": coverage, "protocol_coverage": protocol_coverage}
             if entry.get("calibration"):
                 # Calibration must be observed, not counted as a failed production deception.
                 detected = any(f["target"] == handle and f["verification"]["status"] == "verified"

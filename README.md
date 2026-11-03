@@ -65,6 +65,27 @@ to enable LLM intent summaries. Without it, summaries use judgement `UNKNOWN`.
 A profile using generative fallback must have a provider; deterministic profiles
 can run entirely without one.
 
+Bedrock uses the same deployment YAML provider configuration. Install the native
+extra with `uv sync --extra bedrock`, then select the provider from your SSH
+listener and run `deceive serve --config deployment.yaml`:
+
+```yaml
+providers:
+  default:
+    kind: bedrock
+    aws_profile: YOUR_AWS_PROFILE
+    region: us-east-1
+    model: YOUR_MODEL_OR_INFERENCE_PROFILE_ID
+    max_output_tokens: 2048
+    temperature: null
+```
+
+These are operator-selected settings. Omit `aws_profile` to use the default AWS
+credential chain, including an AWS workload role. The SSH listener example in
+`examples/deployment.yaml` selects the named provider with `provider: default`.
+Container deployments must make their AWS credentials/role available inside the
+container; a host-only profile is not automatically available there.
+
 The same SSH command can run in the standard container by passing
 `-e OPENAI_API_KEY` and mapping port 8022. Keys and API credentials are never built
 into the image.
@@ -80,6 +101,8 @@ The sudo profile exposes the agreed CLI probes and simulated UID bypass over SSH
 on port 8022. The Apache profile exposes single-encoded traversal to declared
 virtual files over HTTP/1.1 on port 8080. They do not run vulnerable software or
 execute payloads. See their [approved criteria](docs/reference-acceptance-proposal.md).
+Sudo profile/suite version 2 uses the human-approved stock-style denial wording;
+the original version 1 criteria and agreement remain in packaged history.
 To run both in one process, use
 `uv run deceive serve --config examples/reference-deployment.yaml`.
 
@@ -181,6 +204,9 @@ reviewers and repeated repairs. Docker targets are exposed only on localhost;
 the skill preserves current edits and does not commit or push automatically.
 Start with `examples/assessment.yaml`. Correctness, realism and telemetry results
 remain separate, and every finalized run produces a graphical SVG dashboard.
+New runs use the versioned `evidence-v2` scoring rubric, require cited score
+evidence and coverage of each advertised HTTP version, and export repeatability
+ranges for repeated reviews of an unchanged candidate.
 
 ## Development and verification
 
@@ -196,6 +222,10 @@ CI requires actual HTTP/3 tests. Container CI builds and exercises the ARM64
 image, retaining measurement reports and an image archive. AMD64 is a deferred
 optional enhancement. Publication,
 merging, and deployment remain separate actions.
+
+Container checks compare installed package files with the candidate source and
+exercise a source-only rebuild with warm Docker/uv caches. The project wheel is
+explicitly reinstalled during image builds; dependency layers remain cached.
 
 ## License
 

@@ -1,6 +1,8 @@
 # Reference deception acceptance proposal
 
-Status: approved by the human on 2026-11-01, before CVE behavior implementation.
+Status: originally approved on 2026-11-01. The sudo refusal criterion was amended
+by the human on 2026-11-02 to use stock-sudo-style denial wording, before that
+behavior change. Apache criteria remain unchanged.
 
 These profiles emulate the interactions below. They do not run vulnerable software,
 execute commands, or read the host filesystem. All asserted outputs use declared
@@ -52,6 +54,34 @@ Limitations: HTTP/1.1 application behavior only; no CGI execution, arbitrary RCE
 request smuggling, memory corruption, or exact Apache transport fingerprint.
 HTTP/2 and HTTP/3 engine support is proven with a separate generic application.
 
+## Sudo version 2 amendment (2026-11-02)
+
+The human selected stock-sudo-style denial instead of a minimal wording change.
+Unsupported commands retain exit status 1 and never execute. The refusal uses
+the template in [sudo 1.8.27's log_denial](https://github.com/sudo-project/sudo/blob/SUDO_1_8_27/plugins/sudoers/logging.c#L303-L309),
+filled with the virtual login user, requested target spelling, command/arguments,
+and configured hostname. The known `id` command uses its declared `/usr/bin/id`
+path. No host PATH lookup, passwd lookup, or execution is introduced.
+
+For `sudo -u#-1 /bin/sh` on the reference baseline the exact required body is:
+
+```text
+Sorry, user guest is not allowed to execute '/bin/sh' as #-1 on build-node-03.
+```
+
+The version 2 suite retains all original positive, prerequisite, protected,
+identity and isolation cases, replaces the disclosure-producing refusal, and
+adds nearby unsupported-option and missing-command controls. Single-command
+cases check exit status over SSH exec; an open interactive channel has no
+per-command process exit status. Missing commands show the supported usage form.
+Full sudo parsing, platform PATH selection, and separate stderr fidelity remain
+outside the declared scope. This is a versioned fidelity amendment, not a claim
+that arbitrary commands or additional id flags now work.
+
+The original suite, profile and exact approval record are retained under
+`deceive/acceptance/history/`. The current sudo agreement is
+`sudo-2019-14287-v2-approval.json`; Apache remains in `reference-approval.json`.
+
 ## Evaluation evidence
 
 Run clients against actual loopback listeners on ephemeral ports. Keep required
@@ -65,6 +95,6 @@ The human approved both CVEs in this chat on 2026-11-01, before implementation.
 Primary sources above were reviewed on the same date. The maintained profiles
 and suites are packaged under `deceive/profiles/` and `deceive/acceptance/`, using
 the names `sudo-2019-14287` and `apache-2021-41773`. The frozen suite fingerprints
-are recorded in `deceive/acceptance/reference-approval.json` and checked by tests.
+are recorded in the active `*-approval.json` records and checked by tests.
 Required and held-out cases are both exercised, with held-out results reported
 separately. Changes to the agreed fidelity or criteria require a new agreement.

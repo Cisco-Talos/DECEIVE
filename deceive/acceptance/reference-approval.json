@@ -4,7 +4,6 @@
   "approval": "Human approved both reference CVEs in the implementation chat before behavior implementation.",
   "criteria": "docs/reference-acceptance-proposal.md",
   "suites": {
-    "sudo-2019-14287": "70e537d51458f9b372493c4bb86c792a8d2b67de5348f13e565190add298047a",
     "apache-2021-41773": "a6655e91e77da2eeb8345c7aa33fe0bddec2b7c291929d09dbeb44f7fb364998"
   }
 }

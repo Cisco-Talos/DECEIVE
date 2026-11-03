@@ -31,6 +31,16 @@ listeners:
 #     model: YOUR_MODEL
 #     api_key_env: OPENAI_API_KEY
 #     temperature: null
+# For Bedrock, replace that provider with these configurable settings:
+# providers:
+#   default:
+#     kind: bedrock
+#     aws_profile: YOUR_AWS_PROFILE
+#     region: us-east-1
+#     model: YOUR_MODEL_OR_INFERENCE_PROFILE_ID
+#     max_output_tokens: 2048
+#     temperature: null
+# Omit aws_profile to use the default AWS credential chain (for example a task role).
 # listeners:
 #   - name: ssh
 #     protocol: ssh

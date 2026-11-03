@@ -1,5 +1,6 @@
 schema_version: 1
 id: sudo-2019-14287
+version: "2"
 references: [https://seclists.org/oss-sec/2019/q4/18]
 cases:
   - id: identity-and-prerequisites
@@ -76,7 +77,19 @@ cases:
   - id: unsupported-binaries-are-not-executed
     steps:
       - command: sudo -u#-1 /bin/sh
-        expect: {body: "sudo: command not permitted by the simulated policy\n", exit_status: 1}
+        expect: {body: "Sorry, user guest is not allowed to execute '/bin/sh' as #-1 on build-node-03.\n", exit_status: 1}
+  - id: nearby-id-options-remain-denied-without-disclosure
+    steps:
+      - command: sudo -u#-1 id --user
+        expect: {body: "Sorry, user guest is not allowed to execute '/usr/bin/id --user' as #-1 on build-node-03.\n", exit_status: 1}
+  - id: combined-id-options-remain-denied-without-disclosure
+    steps:
+      - command: sudo --user='#4294967295' /usr/bin/id -ru
+        expect: {body: "Sorry, user guest is not allowed to execute '/usr/bin/id -ru' as #4294967295 on build-node-03.\n", exit_status: 1}
+  - id: missing-command-shows-supported-usage
+    steps:
+      - command: sudo
+        expect: {body: "usage: sudo -u user command [arg ...]\n", exit_status: 1}
   - id: whitespace-and-option-spelling
     group: held_out
     steps:

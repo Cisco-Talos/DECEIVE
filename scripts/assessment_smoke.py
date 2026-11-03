@@ -61,6 +61,9 @@ async def verify(image: str, root: Path) -> dict:
                                 assert base64.b64decode(observation["body_base64"]) == (b"one" if number == 1 else b"two")
                     engine.record_review(run, Review(candidate_id=public["candidate_id"], role="protocol", target=handle,
                         synthetic_confidence=10, verdict_confidence=100,
+                        score_basis={"band": "no_material_tell", "observations": ["Native protocol negotiation and output assertions passed"],
+                            "evidence": [observation["interaction_id"]],
+                            "coverage_limits": "Deterministic integration fixture, not an expert realism judgment"},
                         summary="Deterministic integration fixture; not a live realism assessment"))
                 result = await engine.end_loop(run)
                 assert result["qualified"], result

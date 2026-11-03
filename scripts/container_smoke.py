@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -14,6 +15,8 @@ import asyncssh
 import httpx
 
 from deceive.clients import h3_connect
+from deceive.assessment.docker import Docker
+from deceive.assessment.workspace import source_files
 
 
 def docker(*args: str) -> str:
@@ -21,6 +24,10 @@ def docker(*args: str) -> str:
 
 
 async def verify(image: str) -> dict:
+    root = Path(__file__).resolve().parents[1]
+    expected = {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest()
+                for p in source_files(root) if p.relative_to(root).parts[0] == "deceive"}
+    attestation = Docker().verify_image(image, expected)
     token = "deceive-smoke-" + uuid.uuid4().hex[:12]
     volume = token + "-data"
     docker("volume", "create", volume)
@@ -29,6 +36,7 @@ async def verify(image: str) -> dict:
     host_architecture = docker("info", "--format", "{{.Architecture}}")
     host_architecture = {"aarch64": "arm64", "x86_64": "amd64"}.get(host_architecture, host_architecture)
     measurements = {"image": image,
+                    "installed_source_files_checked": attestation["checked"],
                     "platform": "linux/" + architecture,
                     "emulated": architecture != host_architecture}
     try:
