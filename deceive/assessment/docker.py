@@ -188,7 +188,8 @@ async def deploy(docker: Docker, run: Path, state: dict, spec: Spec, target: Tar
             await drivers.close()
         endpoint = {"id": f"service-{index + 1}", "listener": listener.name,
                     "protocol": listener.protocol, "versions": listener.versions, "ports": {},
-                    "username": "guest", "password": "", "timeout": config.limits.request_seconds + 5}
+                    "username": "guest", "password": "", "timeout": config.limits.request_seconds +
+                    (config.limits.llm_seconds if listener.analyze else 0) + 5}
         for transport, internal in bindings:
             if transport not in {"tcp", "udp"} or not 1 <= internal <= 65535:
                 raise ValueError("Assessment drivers must declare bounded TCP/UDP bindings")

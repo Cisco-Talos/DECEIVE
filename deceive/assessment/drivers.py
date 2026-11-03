@@ -13,7 +13,7 @@ import asyncssh
 import httpx
 
 from deceive.assessment.models import ProbeAction
-from deceive.clients import h3_connect
+from deceive.clients import ShellClient, h3_connect
 from deceive.telemetry import encode
 
 
@@ -62,12 +62,11 @@ class SSHDriver:
                 password=p.get("password", endpoint.get("password", "")), known_hosts=None,
                 encoding=None)
             session = {"connection": connection, "id": "client-" + uuid.uuid4().hex,
-                       "banner": b"", "process": None}
+                       "banner": b"", "shell": None}
             if interactive:
                 try:
-                    process = await connection.create_process(term_type="xterm")
-                    session["process"] = process
-                    session["banner"] = await process.stdout.readuntil((b"$ ", b"# "))
+                    session["shell"] = await ShellClient.open(connection, endpoint.get("timeout", 35))
+                    session["banner"] = session["shell"].banner
                     self.sessions[key] = session
                 except BaseException:
                     connection.close()
@@ -78,29 +77,18 @@ class SSHDriver:
         try:
             for command in commands:
                 if interactive:
-                    process = session["process"]
-                    process.stdin.write(command.encode() + b"\n")
-                    try:
-                        raw = await process.stdout.readuntil((b"$ ", b"# "))
-                        if b"\n" in raw:
-                            body, prompt = raw.rsplit(b"\n", 1)
-                            body += b"\n"
-                        else:
-                            body, prompt = b"", raw
-                        status = None
-                    except asyncio.IncompleteReadError as exc:
-                        raw = body = exc.partial
-                        prompt = b""
-                        await process.wait_closed()
-                        status = process.exit_status
+                    result = await session["shell"].run(command, endpoint.get("timeout", 35))
+                    body, raw, prompt, status, stderr = (result.body, result.raw, result.prompt,
+                                                       result.exit_status, result.stderr)
+                    if status is not None:
                         self.sessions.pop(key, None)
                 else:
                     result = await connection.run(command, check=False)
-                    body, raw, prompt, status = result.stdout, result.stdout, b"", result.exit_status
-                if len(raw) > 1048576:
+                    body, raw, prompt, status, stderr = result.stdout, result.stdout, b"", result.exit_status, result.stderr
+                if len(raw) + len(stderr) > 1048576:
                     raise ValueError("SSH observation exceeds 1 MiB")
                 outputs.append({"command": command, "body_base64": encode(body), "raw_base64": encode(raw),
-                                "prompt_base64": encode(prompt), "exit_status": status})
+                                "prompt_base64": encode(prompt), "stderr_base64": encode(stderr), "exit_status": status})
                 if status is not None:
                     break
             return {"version": "ssh", "session_id": session["id"],
@@ -109,7 +97,7 @@ class SSHDriver:
                         "server_version": connection.get_extra_info("server_version"),
                         "source_port": connection.get_extra_info("sockname")[1]}}
         finally:
-            if ephemeral:
+            if ephemeral or key not in self.sessions:
                 self.sessions.pop(key, None)
                 connection.close()
                 await connection.wait_closed()

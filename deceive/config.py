@@ -95,7 +95,7 @@ def fingerprint(model: Profile | dict | list) -> str:
         # that distinction when deduplicating and identifying compositions.
         value["composition_constraints"] = {
             "identity": model.identity.model_dump(include=model.identity.model_fields_set),
-            "settings": {key: value[key] for key in ("fallback", "fallback_reply", "cookie_name")
+            "settings": {key: value[key] for key in ("fallback", "fallback_reply", "cookie_name", "ssh_response_format")
                          if key in model.model_fields_set},
         }
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()

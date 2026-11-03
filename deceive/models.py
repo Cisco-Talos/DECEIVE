@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from pathlib import Path
 import re
 from typing import Any, Literal
@@ -40,11 +41,17 @@ class Reply(Model):
     headers: list[tuple[str, str]] = Field(default_factory=list)
     close: bool = False
     exit_status: int = Field(default=0, ge=0, le=255)
+    stderr: str = ""
+    stderr_base64: str | None = None
 
     @model_validator(mode="after")
     def valid_content(self) -> Reply:
         if sum((bool(self.body), self.body_base64 is not None, self.body_file is not None)) > 1:
             raise ValueError("Choose only one of body, body_base64, and body_file")
+        if self.stderr_base64 is not None:
+            if self.stderr:
+                raise ValueError("Choose only one of stderr and stderr_base64")
+            base64.b64decode(self.stderr_base64, validate=True)
         for name, value in self.headers:
             if not re.fullmatch(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+", name) or any(c in value for c in "\r\n\x00"):
                 raise ValueError("Invalid response header")
@@ -103,6 +110,7 @@ class Profile(Model):
     fallback_reply: Reply = Field(default_factory=lambda: Reply(body="Not found\n", status=404))
     stateful: bool = False
     cookie_name: str = "session"
+    ssh_response_format: Literal["text", "json"] = "text"
     references: list[str] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
     requirements: Requirements | None = None
@@ -120,6 +128,11 @@ class Profile(Model):
 
     @model_validator(mode="after")
     def valid_profile(self) -> Profile:
+        if self.protocol != "ssh" and (self.ssh_response_format != "text" or any(
+            reply.stderr or reply.stderr_base64 is not None
+            for reply in [self.fallback_reply] + [behavior.reply for behavior in self.behaviors]
+        )):
+            raise ValueError("SSH response format and stderr are only supported for SSH profiles")
         if len({b.id for b in self.behaviors}) != len(self.behaviors):
             raise ValueError("Behavior IDs must be unique")
         if not self.http_versions:

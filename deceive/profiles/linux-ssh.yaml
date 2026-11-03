@@ -1,12 +1,12 @@
 schema_version: 1
 id: linux-ssh
-version: "1"
+version: "2"
 description: A Linux build host with stable identity, virtual baseline files and LLM fallback.
 protocol: ssh
 requirements:
   protocol: ssh
   preferred_port: 8022
-  capabilities: [ssh.commands, 'behavior:identity']
+  capabilities: [ssh.commands, ssh.structured_responses, 'behavior:identity']
 identity:
   hostname: build-node-03
   os: Ubuntu 22.04.5 LTS
@@ -25,11 +25,13 @@ behaviors:
   - id: identity
     kind: identity
 fallback: llm
+ssh_response_format: json
 prompt: |
   Emulate a Linux build server belonging to a small software company. Use the
   supplied identity and virtual files consistently. Other activity is isolated to
   this session. Answer only the current command and never invent a following
-  command. Return output only; the server renders the shell prompt and banner.
+  command. Use the runtime-requested response format and preserve output bytes,
+  including trailing newlines. The server renders the shell prompt and banner.
 limitations:
   - Only declared baseline files and supported identity commands are deterministic.
   - Other command output is generative; no command executes on a real system.

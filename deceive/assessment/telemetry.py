@@ -4,6 +4,22 @@ import base64
 import json
 
 
+def ssh_output_matches(record: dict, output: dict) -> bool:
+    try:
+        body = base64.b64decode(record.get("ssh_stdout", record.get("details", "")), validate=True)
+        stderr = base64.b64decode(record.get("ssh_stderr", ""), validate=True)
+        if record.get("interactive"):
+            body += stderr
+        elif output.get("stderr_base64", "") != base64.b64encode(stderr).decode():
+            return False
+        if output.get("exit_status") is not None and "ssh_exit_status" in record:
+            if output["exit_status"] != record["ssh_exit_status"]:
+                return False
+        return base64.b64encode(body).decode() == output["body_base64"]
+    except (ValueError, TypeError, KeyError):
+        return False
+
+
 def audit(records: list[dict], observations: list[dict], allowed_profiles: set[str]) -> dict:
     errors = []
     inputs, responses, summaries = {}, {}, {}
@@ -18,9 +34,14 @@ def audit(records: list[dict], observations: list[dict], allowed_profiles: set[s
             if not record.get("profile_id"):
                 errors.append("Missing profile attribution")
             try:
-                base64.b64decode(record["details"], validate=True)
-            except (ValueError, KeyError):
+                for key in ("details", "ssh_stdout", "ssh_stderr"):
+                    if key == "details" or key in record:
+                        base64.b64decode(record[key], validate=True)
+            except (ValueError, TypeError, KeyError):
                 errors.append("Invalid base64 content")
+            if "ssh_stdout" in record and ("ssh_stderr" not in record or
+                type(record.get("ssh_exit_status")) is not int or not 0 <= record["ssh_exit_status"] <= 255):
+                errors.append("Invalid SSH output metadata")
             request = record.get("request_id")
             if not request:
                 errors.append("Missing request correlation")
@@ -69,7 +90,7 @@ def audit(records: list[dict], observations: list[dict], allowed_profiles: set[s
             outputs = observation.get("facts", {}).get("outputs", [])
             for output in outputs:
                 command = base64.b64encode(output["command"].encode()).decode()
-                if not any(before.get("details") == command and after.get("details") == output["body_base64"]
+                if not any(before.get("details") == command and ssh_output_matches(after, output)
                            for before, after in paired):
                     errors.append("Client SSH input/output pair not found in telemetry")
         elif observation["protocol"] in {"http", "https"}:

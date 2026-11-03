@@ -26,6 +26,7 @@ def migrate(source: Path, destination: Path) -> list[str]:
         "History now has conservative byte/token budgets and turn limits; token trimming semantics changed.",
         "The runtime renders SSH prompts/MOTD. Review legacy prompt instructions for conflicting formatting.",
         "Generative identity details must be configured explicitly for consistency across connections.",
+        "Legacy SSH text replies are retained; opt into ssh_response_format: json for structured streams and model exit statuses.",
     ]
     kind = llm.get("llm_provider", "openai").lower()
     kind = "bedrock" if kind == "aws" else kind
@@ -57,6 +58,7 @@ def migrate(source: Path, destination: Path) -> list[str]:
                "identity": {"ssh_version": ssh.get("server_version_string", "OpenSSH_8.9p1")
                             .removeprefix("SSH-2.0-")},
                "behaviors": [{"id": "identity", "kind": "identity"}], "fallback": "llm",
+               "ssh_response_format": "text",
                "prompt": llm.get("system_prompt", "")}
     prompt_file = source.parent / "prompt.txt"
     if prompt_file.is_file():

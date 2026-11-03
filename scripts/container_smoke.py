@@ -140,6 +140,10 @@ asyncio.run(run())
     measurements["composition"] = json.loads(docker(
         "run", "--rm", "--platform", "linux/" + architecture, "--network", "none",
         "--entrypoint", "python", image, "-c", composition_program))
+    ssh_program = Path(__file__).with_name("check_ssh_fidelity.py").read_text()
+    measurements["ssh_fidelity"] = json.loads(docker(
+        "run", "--rm", "--platform", "linux/" + architecture, "--network", "none",
+        "--entrypoint", "python", image, "-c", ssh_program))
     # Containerd may report only compressed content before a foreign-platform
     # image's first run. Measure after unpacking for comparable stored sizes.
     measurements["image_bytes"] = int(docker("image", "inspect", image, "--format", "{{.Size}}"))

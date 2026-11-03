@@ -65,6 +65,13 @@ to enable LLM intent summaries. Without it, summaries use judgement `UNKNOWN`.
 A profile using generative fallback must have a provider; deterministic profiles
 can run entirely without one.
 
+The bundled `linux-ssh` version 2 requests structured model replies so stdout,
+stderr and command exit status remain separate. Output bytes retain their trailing
+newlines, including commands that emit none. Interactive terminals display both
+streams before the server-owned prompt; `echo $?` and bare `exit` use the previous
+command status. Existing custom and migrated profiles keep text replies unless
+they select `ssh_response_format: json`. See the [SSH reply contract](docs/profiles.md#ssh-model-replies).
+
 Bedrock uses the same deployment YAML provider configuration. Install the native
 extra with `uv sync --extra bedrock`, then select the provider from your SSH
 listener and run `deceive serve --config deployment.yaml`:
@@ -192,6 +199,10 @@ IDs, sensor fields, and base64 input/output details. Deterministic output is a
 summary` is emitted per session. Intent analysis is optional and failures produce
 `UNKNOWN`. HTTP records also preserve binary body content and structured request
 metadata; these are not raw packet captures.
+SSH responses add base64 `ssh_stdout`/`ssh_stderr` and numeric `ssh_exit_status`.
+For structured model replies, `LLM response.details` retains the raw model JSON
+rather than just the terminal text. Consumers comparing wire output should use
+the stream fields.
 
 ```sh
 uv run deceive profile validate demo-http

@@ -72,6 +72,8 @@ user1 = secret
     assert deployment.listeners[0].accounts == {"guest": "", "root": "*", "user1": "secret"}
     assert deployment.providers["default"].kind == "bedrock"
     assert "Fixed legacy persona" in load_profile(deployment.listeners[0].profile).prompt
+    assert load_profile(deployment.listeners[0].profile).ssh_response_format == "text"
+    assert read_yaml(output / "profile.yaml")["ssh_response_format"] == "text"
     assert any("semantics changed" in note for note in report)
     assert "DO-NOT-COPY" not in (output / "deployment.yaml").read_text()
     assert (output / "deployment.yaml").stat().st_mode & 0o777 == 0o600

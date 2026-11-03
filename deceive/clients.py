@@ -4,7 +4,9 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 import ssl
+import re
 
+import asyncssh
 import httpx
 
 from aioquic.asyncio import QuicConnectionProtocol, connect
@@ -20,6 +22,51 @@ class HTTPResult:
     body: bytes
     headers: list[tuple[bytes, bytes]]
     version: str
+
+
+@dataclass
+class ShellOutput:
+    body: bytes
+    raw: bytes
+    prompt: bytes
+    exit_status: int | None
+    stderr: bytes = b""
+
+
+class ShellClient:
+    """Read server-owned prompts without trimming command output or decoding bytes."""
+
+    def __init__(self, process, banner: bytes):
+        self.process = process
+        self.banner = banner
+        prompt = banner.rsplit(b"\n", 1)[-1]
+        self.prefix = prompt.split(b":", 1)[0] + b":"
+        hostname = self.prefix.rsplit(b"@", 1)[-1].removesuffix(b":")
+        self.pattern = re.compile(rb"[^\r\n]{1,128}@" + re.escape(hostname) +
+                                  rb":[^\r\n]{0,4096}[$#] ")
+
+    @classmethod
+    async def open(cls, connection: asyncssh.SSHClientConnection, timeout: float) -> ShellClient:
+        process = await connection.create_process(term_type="xterm")
+        pattern = re.compile(rb"[^\r\n]{1,128}@[A-Za-z0-9][A-Za-z0-9.-]{0,62}:[^\r\n]{0,4096}[$#] ")
+        banner = await asyncio.wait_for(process.stdout.readuntil(pattern), timeout)
+        return cls(process, banner)
+
+    async def run(self, command: str, timeout: float) -> ShellOutput:
+        self.process.stdin.write(command.encode() + b"\n")
+        try:
+            raw = await asyncio.wait_for(self.process.stdout.readuntil(self.pattern), timeout)
+            start = raw.rfind(b"\n") + 1
+            known = raw.rfind(self.prefix)
+            if known >= start:
+                start = known
+            body, prompt = raw[:start], raw[start:]
+            self.prefix = prompt.split(b":", 1)[0] + b":"
+            return ShellOutput(body, raw, prompt, None)
+        except asyncio.IncompleteReadError as exc:
+            await asyncio.wait_for(self.process.wait_closed(), timeout)
+            stderr = await self.process.stderr.read()
+            return ShellOutput(exc.partial, exc.partial, b"", self.process.exit_status, stderr)
 
 
 class H3ClientConnection(H3Connection):

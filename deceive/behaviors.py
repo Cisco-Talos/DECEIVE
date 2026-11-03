@@ -13,7 +13,9 @@ from deceive.vulnerabilities import CVE_HANDLERS, validate_cve
 def make_response(reply: Reply, behavior: str = "fallback") -> Response:
     body = (base64.b64decode(reply.body_base64, validate=True)
             if reply.body_base64 is not None else reply.body.encode())
-    return Response(body=body, status=reply.status,
+    stderr = (base64.b64decode(reply.stderr_base64, validate=True)
+              if reply.stderr_base64 is not None else reply.stderr.encode())
+    return Response(body=body, stderr=stderr, status=reply.status,
                     headers=[(k.lower().encode("ascii"), v.encode("latin-1"))
                              for k, v in reply.headers], close=reply.close,
                     exit_status=reply.exit_status, behavior=behavior)
@@ -54,6 +56,8 @@ def identity(profile: Profile, spec: Behavior, interaction: Interaction,
         words = shlex.split(interaction.command)
     except ValueError:
         return Response(body=b"sh: syntax error\n", exit_status=2, behavior=spec.id)
+    if not words:
+        return Response(exit_status=session.last_exit_status, behavior=spec.id)
     facts = profile.identity
     user = session.state.get("user", session.username)
     uid = session.state.get("uid", str(0 if user == "root" else facts.uid))
@@ -79,6 +83,8 @@ def identity(profile: Profile, spec: Behavior, interaction: Interaction,
         output = f"Linux {facts.hostname} {facts.kernel} #1 SMP {facts.architecture} GNU/Linux\n"
     elif words == ["pwd"]:
         output = cwd + "\n"
+    elif interaction.command.strip() in {"echo $?", 'echo "$?"'}:
+        output = str(session.last_exit_status) + "\n"
     elif words and words[0] == "cat" and len(words) == 2:
         path = posixpath.normpath(posixpath.join(cwd, words[1]))
         if path in profile.files:
@@ -100,7 +106,10 @@ def identity(profile: Profile, spec: Behavior, interaction: Interaction,
         output = "\n".join(sorted(posixpath.basename(p) for p in profile.files
                                   if posixpath.dirname(p) == cwd)) + "\n"
     elif words == ["exit"] or words == ["logout"]:
-        return Response(close=True, behavior=spec.id)
+        return Response(close=True, exit_status=session.last_exit_status, behavior=spec.id)
+    elif (len(words) == 2 and words[0] == "exit" and words[1].isascii()
+          and words[1].isdecimal() and len(words[1]) <= 3 and int(words[1]) <= 255):
+        return Response(close=True, exit_status=int(words[1]), behavior=spec.id)
     if output is None:
         return None
     return Response(body=output.encode(), behavior=spec.id, transition=transition)

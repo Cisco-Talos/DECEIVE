@@ -17,7 +17,7 @@ import asyncssh
 import httpx
 from pydantic import Field, model_validator
 
-from deceive.clients import HTTPResult, h3_connect
+from deceive.clients import HTTPResult, ShellClient, h3_connect
 from deceive.config import fingerprint, load_deployment, load_profile, read_yaml
 from deceive.models import Deployment, Listener, Model, Profile
 from deceive.runtime import Runtime
@@ -31,6 +31,8 @@ class Expected(Model):
     regex: str | None = Field(default=None, min_length=1)
     status: int | None = None
     exit_status: int | None = None
+    stderr: str | None = None
+    stderr_base64: str | None = None
     headers: list[tuple[str, str]] = Field(default_factory=list)
     json_value: object = None
     state: dict[str, str] = Field(default_factory=dict)
@@ -39,7 +41,7 @@ class Expected(Model):
     def has_assertion(self) -> Expected:
         if not (self.headers or self.state or any(value is not None for value in (
             self.body, self.body_base64, self.contains, self.regex, self.status,
-            self.exit_status, self.json_value,
+            self.exit_status, self.json_value, self.stderr, self.stderr_base64,
         ))):
             raise ValueError("Each acceptance step needs at least one assertion")
         return self
@@ -86,7 +88,7 @@ class Suite(Model):
 
 
 def assertions(expected: Expected, result: HTTPResult, exit_status: int | None,
-               state: dict) -> list[str]:
+               state: dict, stderr: bytes = b"") -> list[str]:
     errors = []
     if expected.body is not None and result.body != expected.body.encode():
         errors.append("body differs")
@@ -100,6 +102,13 @@ def assertions(expected: Expected, result: HTTPResult, exit_status: int | None,
         errors.append(f"status {result.status}, expected {expected.status}")
     if expected.exit_status is not None and expected.exit_status != exit_status:
         errors.append("exit status differs")
+    if expected.stderr is not None or expected.stderr_base64 is not None:
+        if result.version != "ssh":
+            errors.append("stderr assertions require SSH")
+        elif expected.stderr is not None and stderr != expected.stderr.encode():
+            errors.append("stderr differs")
+        elif expected.stderr_base64 is not None and stderr != base64.b64decode(expected.stderr_base64, validate=True):
+            errors.append("binary stderr differs")
     for name, value in expected.headers:
         if (name.lower().encode(), value.encode()) not in result.headers:
             errors.append(f"missing header {name}")
@@ -168,7 +177,8 @@ async def evaluate_external(suite_path: Path, protocol: str, version: str,
                     if result.version != ("ssh" if protocol == "ssh" else version):
                         raise ValueError("Protocol fallback in external acceptance")
                     exit_status = facts.get("outputs", [{}])[-1].get("exit_status")
-                    errors = assertions(step.expect, result, exit_status, state)
+                    stderr = base64.b64decode(facts.get("outputs", [{}])[-1].get("stderr_base64", ""))
+                    errors = assertions(step.expect, result, exit_status, state, stderr)
                     output.append({"interaction_id": observed.get("interaction_id"), "errors": errors})
                 return output
             finally:
@@ -200,6 +210,7 @@ async def _sequence(runtime: Runtime, listener: Listener, case: Case, version: s
                     interactive: bool) -> list[dict]:
     transcript = []
     handle = runtime.servers[listener.name]
+    timeout = runtime.limits.request_seconds + (runtime.limits.llm_seconds if listener.analyze else 0) + 5
     async with AsyncExitStack() as stack:
         connection = None
         process = None
@@ -212,11 +223,10 @@ async def _sequence(runtime: Runtime, listener: Listener, case: Case, version: s
                     port = handle.endpoints[0]["port"]
                     connection = await stack.enter_async_context(asyncssh.connect(
                         "127.0.0.1", port=port, username=case.username,
-                        password=case.password, known_hosts=None,
+                        password=case.password, known_hosts=None, encoding=None,
                     ))
                     if interactive:
-                        process = await connection.create_process(term_type="xterm")
-                        await asyncio.wait_for(process.stdout.readuntil(("$ ", "# ")), 5)
+                        process = await ShellClient.open(connection, timeout)
                     client = connection
                 elif version == "3":
                     port = next(e["port"] for e in handle.endpoints if e["transport"] == "udp")
@@ -229,25 +239,20 @@ async def _sequence(runtime: Runtime, listener: Listener, case: Case, version: s
                         follow_redirects=False, timeout=5, trust_env=False,
                     ))
             exit_status = None
+            stderr = b""
             if listener.protocol == "ssh":
                 if step.command is None:
                     raise ValueError("SSH steps require command")
                 if interactive:
-                    process.stdin.write(step.command + "\n")
-                    try:
-                        value = await asyncio.wait_for(process.stdout.readuntil(("$ ", "# ")), 5)
-                        # Strip the final server-owned shell prompt.
-                        output = value.rsplit("\n", 1)[0] + "\n" if "\n" in value else ""
-                    except asyncio.IncompleteReadError as exc:
-                        output = exc.partial
-                        await asyncio.wait_for(process.wait_closed(), 5)
-                        exit_status = process.exit_status
+                    value = await process.run(step.command, timeout)
+                    if value.exit_status is not None:
                         client = None
-                    result = HTTPResult(200, output.encode(), [], "ssh")
+                    exit_status, stderr = value.exit_status, value.stderr
+                    result = HTTPResult(200, value.body, [], "ssh")
                 else:
-                    value = await connection.run(step.command, check=False, timeout=5)
-                    exit_status = value.exit_status
-                    result = HTTPResult(200, value.stdout.encode(), [], "ssh")
+                    value = await connection.run(step.command, check=False, timeout=timeout)
+                    exit_status, stderr = value.exit_status, value.stderr
+                    result = HTTPResult(200, value.stdout, [], "ssh")
                     # The SSH adapter deliberately permits one process per connection.
                     client = None
             else:
@@ -269,9 +274,10 @@ async def _sequence(runtime: Runtime, listener: Listener, case: Case, version: s
                 token = client.cookies.get(runtime.profiles[listener.name].cookie_name)
                 sessions = [s for s in sessions if s.id == token]
             state = dict(sessions[-1].state) if sessions else {}
-            errors = assertions(step.expect, result, exit_status, state)
+            errors = assertions(step.expect, result, exit_status, state, stderr)
             transcript.append({"input": step.model_dump(mode="json", exclude={"expect"}),
-                               "body_base64": encode(result.body), "status": result.status,
+                               "body_base64": encode(result.body), "stderr_base64": encode(stderr), "status": result.status,
+                               "exit_status": exit_status,
                                "headers": [[encode(k), encode(v)] for k, v in result.headers],
                                "version": result.version, "errors": errors})
     return transcript
@@ -315,6 +321,7 @@ async def evaluate(reference: str, suite_path: Path, report_dir: Path, *,
                     if not source.providers:
                         raise ValueError("Evaluation configuration has no providers")
                     config.providers = source.providers
+                    config.limits = source.limits
                     listener.provider = next(iter(source.providers))
                     selected = source.providers[listener.provider]
                     provider_metadata = {"kind": selected.kind, "model": selected.model,

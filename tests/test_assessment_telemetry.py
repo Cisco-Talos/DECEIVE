@@ -42,3 +42,16 @@ def test_telemetry_checks_metadata_auth_and_captured_input(mutation):
     else:
         changed.append(changed[2] | {"request_id": "orphan"})
     assert audit(changed, observations, {"sample"})["status"] == "failed"
+
+
+@pytest.mark.parametrize("interactive", [False, True])
+def test_structured_ssh_logs_preserve_model_text_and_match_wire_streams(interactive):
+    records, observations = fixture()
+    records[2].update(message="LLM response", response_origin="llm", details=encoded('{"exit_status":7}'),
+                      interactive=interactive, ssh_stdout=encoded("out"), ssh_stderr=encoded("error\n"), ssh_exit_status=7)
+    output = observations[0]["facts"]["outputs"][0]
+    output.update(body_base64=encoded("outerror\n" if interactive else "out"),
+                  stderr_base64=encoded("" if interactive else "error\n"), exit_status=None if interactive else 7)
+    assert audit(records, observations, {"sample"})["status"] == "passed"
+    output["body_base64"] = encoded("wrong")
+    assert audit(records, observations, {"sample"})["status"] == "failed"

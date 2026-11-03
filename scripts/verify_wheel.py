@@ -89,6 +89,8 @@ asyncio.run(run())
         subprocess.run([str(interpreter), "-c", acceptance_program], cwd=root, env=env, check=True)
         composition_program = Path(__file__).with_name("check_composition.py").read_text()
         subprocess.run([str(interpreter), "-c", composition_program], cwd=root, env=env, check=True)
+        ssh_program = Path(__file__).with_name("check_ssh_fidelity.py").read_text()
+        subprocess.run([str(interpreter), "-c", ssh_program], cwd=root, env=env, check=True)
         with (root / "stdout.jsonl").open("w+") as output:
             started = time.monotonic()
             process = subprocess.Popen([str(binary), "serve", "--port", "0", "--host", "127.0.0.1",

@@ -20,6 +20,7 @@ def entry(reference: str, profile: Profile) -> dict:
             "protocol": requirements.protocol if requirements else profile.protocol,
             "http_versions": effective.http_versions if profile.protocol == "http" else [],
             "fallback": effective.fallback,
+            "ssh_response_format": effective.ssh_response_format if profile.protocol == "ssh" else None,
             "behavior_kinds": sorted({b.kind for b in effective.behaviors}),
             "base_profile": requirements.base_profile if requirements else None,
             "base_version": requirements.base_version if requirements else None,

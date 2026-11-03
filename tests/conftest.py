@@ -1,5 +1,6 @@
 import asyncio
 import io
+import json
 from pathlib import Path
 
 import pytest
@@ -22,6 +23,8 @@ class FakeProvider:
             return ModelResult("The user inspected the build server. Judgement: BENIGN")
         if messages[-1].content == "exit-shell":
             return ModelResult("YYY-END-OF-SESSION-YYY")
+        if "SSH response format: json" in messages[0].content:
+            return ModelResult(json.dumps({"stdout": "simulated output\n", "stderr": "", "exit_status": 0}))
         return ModelResult("simulated output\n")
 
     async def close(self):

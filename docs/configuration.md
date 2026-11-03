@@ -136,6 +136,8 @@ SSH accepts one process/channel per connection. A connection owns its session
 and authentication telemetry. Empty configured passwords allow passwordless
 login; fixed values require an exact match; `*` and unknown users accept any
 password, including empty. This deceptive behavior is intentional.
+SSH output format is owned by the profile (`ssh_response_format: text` or `json`),
+not the listener/provider. See [SSH model replies](profiles.md#ssh-model-replies).
 
 Stateless HTTP creates one session per request. Stateful profiles issue opaque
 server-generated cookies; unknown client-selected IDs never create chosen session
@@ -229,6 +231,13 @@ the original body in base64. This representation is not a packet capture or the
 original HTTP framing. HTTP response events include status and version.
 
 Actual model output is `LLM response`; deterministic output is `Deception response`.
+SSH response records add base64 `ssh_stdout`, base64 `ssh_stderr`, and integer
+`ssh_exit_status`. For structured replies, `details` preserves the raw model JSON
+(including any surrounding fence), while stream fields describe parsed output.
+Interactive clients see stdout followed by stderr; exec clients see separate
+channels. Invalid structured replies are logged as `LLM response` with
+`ssh_response_error: invalid_format`, without parsed stream fields, then produce
+a sanitized session failure. The rejected model text is never sent to the client.
 `Session summary.details` remains plain text, with judgement `BENIGN`, `SUSPICIOUS`,
 `MALICIOUS`, or `UNKNOWN`. At most one summary is emitted per session. Authentication
 events intentionally include attempted usernames/passwords. Provider errors are

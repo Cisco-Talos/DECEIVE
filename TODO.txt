@@ -5,10 +5,11 @@
 * Reconnect persistence and shared mutable system state across services (future capabilities).
 * Offline detection/clustering and candidate CVE research/authoring modules.
 * Raw framing vulnerabilities and packet/OS fingerprint fidelity (outside current application-level scope).
-* Improve model realism for unfamiliar commands and prevent invented future inputs; identity queries and shell prompts are now deterministic. Generative output still needs exact terminal line-ending and exit-status fidelity work.
+* Improve model realism for unfamiliar commands and prevent invented future inputs; full shell grammar, PTY line discipline and arbitrary stdout/stderr interleaving remain outside current fidelity.
 * HTTP/2 method case preservation/virtual proxy semantics and pre-validation HTTP/3 FIN observation, guided by capability tests before new CVE behavior (docs/protocol-capability-findings.md).
 
 Completed on codex/deception-profiles:
+* Structured SSH model replies preserve stdout/stderr bytes and exit status; shared assessment/evaluation clients retain binary/unterminated output. Private status, telemetry and legacy compatibility have deterministic and bounded Bedrock checks.
 * Fresh umbrella-skill operator acceptance: composed deployment identity reuse, tests-first fictional H2/H3 profile, one bounded four-reviewer assessment and final dashboard; verified client-only HEAD metadata repair with original panel evidence preserved.
 * Unified CLI profile catalog/show, owned Docker deployment start/stop/list/status/remove, versioned operation results and repository-local deceive umbrella skill; local wheel/container/lifecycle checks pass.
 * Shared runtime, bounded sessions/input/output/model calls, session-history cleanup and one-summary ownership.

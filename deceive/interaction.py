@@ -34,6 +34,8 @@ class Response:
     behavior: str = "fallback"
     origin: str = "deterministic"
     transition: dict[str, str] = field(default_factory=dict)
+    stderr: bytes = b""
+    model_output: str | None = None
 
 
 @dataclass
@@ -51,6 +53,7 @@ class Session:
     input_count: int = 0
     lock: object = None
     expire: Callable[[], None] | None = None
+    last_exit_status: int = 0
 
 
 API_VERSION = 1

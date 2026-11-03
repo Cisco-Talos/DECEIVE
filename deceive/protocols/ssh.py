@@ -102,6 +102,7 @@ async def handle_process(process: asyncssh.SSHServerProcess, runtime: Runtime,
                 result = await runtime.respond(session, Interaction("ssh", command=text,
                     raw_input=command if isinstance(command, bytes) else command.encode()))
                 process.stdout.write(result.body)
+                process.stderr.write(result.stderr)
                 exit_status = result.exit_status
                 return
             profile = runtime.profiles[listener.name]
@@ -120,7 +121,9 @@ async def handle_process(process: asyncssh.SSHServerProcess, runtime: Runtime,
                         raw_input=bytes(line.rstrip(b"\r")), interactive=True
                     ))
                     line.clear()
-                    process.stdout.write(result.body)
+                    # A shell terminal displays both streams before its next prompt.
+                    process.stdout.write(result.body + result.stderr)
+                    exit_status = result.exit_status
                     if result.close:
                         break
                     process.stdout.write(prompt(runtime, session))

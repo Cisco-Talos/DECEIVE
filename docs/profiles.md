@@ -66,14 +66,14 @@ base, as the reference CVE profiles do.
 and takes precedence. External container mappings are operator-owned. Requirements
 can also declare `incompatible_with: [profile-id]` and `scope: request`, `session`,
 or `connection`. Connection-scoped profiles cannot currently share a listener
-with another deception. Built-in capabilities are `ssh.commands`, `http.requests`,
+with another deception. Built-in capabilities are `ssh.commands`, `ssh.structured_responses`, `http.requests`,
 `http.raw_path`, `http.binary_body`, `http.duplicate_headers`, `http.sessions`, and
 `behavior:NAME` for enabled handlers. Unknown capabilities fail validation, including
 raw frame/QPACK/QUIC event hooks that the engine does not yet implement.
 
 The base owns identity, ordinary behavior and final fallback. Deceptions can add
 virtual files; conflicting content or explicit identity facts fail validation.
-Explicit fallback/cookie settings must agree with the base. One common prompt
+Explicit fallback/cookie/SSH response-format settings must agree with the base. One common prompt
 may be supplied; differing prompts are rejected rather than concatenated.
 Setting `stateful: true` enables the common application's cookie session, while
 each deception's rule state/transition keys are namespaced. Shared mutable state
@@ -107,6 +107,8 @@ Replies support one of UTF-8 `body`, `body_base64`, or profile-relative `body_fi
 plus `status`, header pairs, `exit_status`, and `close`. Header pairs retain
 duplicates. HTTP framing/hop-by-hop headers are owned by the adapter. Profile
 assets are loaded at startup; no request-selected path can become an asset path.
+SSH replies additionally support UTF-8 `stderr` or binary `stderr_base64`.
+The output limit applies to stdout and stderr together.
 
 State transitions contain string keys/values and have bounded size. Session state
 cannot change deployment identity. `cwd`, `user`, and `uid` are reserved SSH facts;
@@ -129,11 +131,51 @@ SSH version, and banner. `files` maps absolute virtual paths to fixed content.
 The `identity` handler supports `hostname`, selected `uname`/`id` forms, `whoami`,
 `pwd`, reading declared files, basic directory changes/listing, and shell exit.
 It does not implement a real filesystem, shell grammar, binaries, or subprocesses.
+`echo $?` and `echo "$?"` report the previous command status; a successful query
+then sets status 0. Blank input preserves status. Bare `exit`/`logout` inherits
+the previous status, and `exit N` supports explicit statuses 0–255. Status and
+history belong to the connection and are cleared at session end.
 
 SSH profiles can keep arbitrary other commands generative. A CVE profile must
 declare its supported command family and fidelity explicitly. A narrow HTTP
 deception need not model an operating system at all. Cross-service shared mutable
 state and persistent attacker changes are future capabilities.
+
+## SSH model replies
+
+The profile setting `ssh_response_format` defaults to `text` for compatibility.
+Text output is preserved as returned and has exit status 0; the legacy standalone
+`YYY-END-OF-SESSION-YYY` sentinel still ends the session. Text that happens to look
+like JSON remains literal output. INI migration explicitly retains this mode.
+
+The bundled `linux-ssh` version 2 selects `ssh_response_format: json` and declares
+`ssh.structured_responses`. The model returns one object, for example:
+
+```json
+{"stdout":"partial","stderr":"permission denied\n","exit_status":1,"close":false}
+```
+
+`exit_status` is required and must be an integer 0–255. `stdout` and `stderr`
+default to empty strings; `close` defaults to false and ends the login shell when
+true. For non-UTF-8 output use `stdout_base64` or `stderr_base64` instead of the
+corresponding text. Values must have the declared types; duplicate/unknown fields,
+invalid base64, tool requests, file references and state-transition fields fail
+validation. A single surrounding JSON Markdown fence is tolerated; explanatory
+text outside the object is rejected. Raw model text stays in telemetry.
+
+The runtime supplies the same bounded, structured history for deterministic and
+generated interactions, including streams and status. Model adapters remain
+text-only and expose no tools. This schema improves output transport and status
+fidelity; it does not turn generative responses into a complete shell emulator.
+Only history represents generative effects such as an exported variable, so
+trimming that history can lose those effects.
+
+Exec channels expose stdout and stderr independently. Interactive channels display
+stdout followed by stderr before the prompt; arbitrary interleaving of the two
+streams is not represented. The adapter does not append newlines or emulate PTY
+line discipline. Unsupported/malformed replies end the session with a sanitized
+failure. Existing deterministic CVE response wording and stream placement are
+unchanged.
 
 ## Reference vulnerability behaviors
 

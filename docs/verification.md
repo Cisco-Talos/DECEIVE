@@ -9,7 +9,7 @@ persistent deployment was performed.
 ## Tests and acceptance
 
 - Original SSH baseline: 26 tests passed. Assessment baseline: **105 tests passed**.
-- Current deterministic suite: **176 tests passed** in 53.22 seconds on Darwin arm64,
+- Current deterministic suite: **202 tests passed** in 52.86 seconds on Darwin arm64,
   Python 3.11.15. This includes actual SSH, HTTP/1.1, HTTP/2 multiplexing, HTTP/3,
   binary content, authentication modes, isolated state, key reuse, migration,
   resource/deadline handling, startup rollback, observer failures, and offline
@@ -230,6 +230,50 @@ used. No new CVE or public deployment was added.
 Current local evidence is under ignored `results/unified-interface-20261103/`.
 No PR, merge or publication was performed; ARM64 remote CI remains deferred.
 
+## SSH stream and exit-status fidelity — 2026-11-03
+
+The built-in `linux-ssh` profile is now version 2 and requests structured model
+replies. Existing custom/INI-migrated profiles retain text mode. Neither frozen
+CVE suite nor its agreement record changed. Real SSH tests verify exact stdout
+and stderr bytes, missing/extra trailing newlines, binary content, strict schema
+validation, status queries, shell exit, private status and one-summary ownership.
+The assessment/evaluation clients share byte-preserving prompt handling; source
+tests also cover response-format inheritance and configured evaluation limits.
+
+Initial red runs captured 12 missing-contract failures, two client-capture
+failures and a blank-line status failure. A later regression reproduced the
+assessment client's open connection after shell exit; the driver now closes it.
+Evidence is retained under ignored `results/ssh-fidelity-20261103/`.
+
+A separately authorized live Bedrock check used configurable AWS profile, region,
+model and limits from local deployment YAML. No credentials are in the repository.
+The five-case criteria were frozen before execution. The first run passed 3/5:
+exec output worked, but interactive replies sometimes included JSON fences and
+were rejected. One diagnostic call confirmed the wrapper. The decoder now
+tolerates only a single JSON fence, still validating types/fields and preserving
+raw model output. Explanatory text and malformed objects remain rejected.
+
+The unchanged live suite then passed **5/5**, covering newline/unterminated exec
+output, separate stderr with status 7, interactive variable history, status
+queries and inherited shell exit, followed by a fresh baseline. The fresh-baseline
+case starts a new runtime; it does not independently prove concurrent-session
+isolation. Deterministic integration tests cover private concurrent state.
+The two suite executions and diagnostic used **17 generation calls**, reporting
+10,454 input and 368 output tokens; analysis was disabled. These are reported
+token counts, not a dollar estimate or a general realism assessment.
+
+The final wheel and ARM64 image exercise the new path with fake providers and
+real SSH channels, including binary output, separate stderr/status, interactive
+status and fresh-connection status. The same scripts retain frozen CVE acceptance,
+real HTTP/2–3 and composition checks. A two-loop Docker assessment smoke uses fake
+review reports and validates SSH/HTTP drivers, telemetry, compatible container
+reuse and teardown; it is not an independent expert panel.
+
+Structured history improves transport fidelity without implementing a complete
+shell. Generative state remains bounded history; PTY line discipline, arbitrary
+stdout/stderr interleaving and output indistinguishable from the shell prompt
+remain documented limitations. No new runtime dependencies were introduced.
+
 ## Container measurements
 
 Docker Engine 29.9.2 runs Linux/aarch64 on this workstation. ARM64 is the only
@@ -240,13 +284,14 @@ performance promises.
 | Artifact | Docker-reported stored bytes after unpacking | Ready time | Packages |
 | --- | ---: | ---: | ---: |
 | `deceive:interface-arm64` (native) | 384,095,894 | 1.579 s | 50 |
+| `deceive:ssh-fidelity-arm64` (native) | 384,143,198 | 1.568 s | 50 |
 
 Ready time measures container creation/start through the local health probe with
 an existing image and a new data volume. It excludes image pulling. Stored image
 size is measured after first unpacking, so lazy-unpacked foreign images are not
 incorrectly compared using compressed content alone; it is not a download size.
-The standard image also verifies installed source/assets against 49 expected
-files. A separate warm-cache rebuild changes only copied Python source while
+The latest standard image verifies installed source/assets against 50 expected
+files (49 before the SSH reply module). A separate warm-cache rebuild changes only copied Python source while
 retaining identical build metadata, then verifies the changed installed bytes.
 
 Container smoke tests removed their disposable containers and volumes. Built
@@ -258,10 +303,10 @@ triggered or published as part of this work.
 
 | Measurement | Result |
 | --- | ---: |
-| Wheel, excluding dependencies | 110,179 bytes |
+| Wheel, excluding dependencies | 113,901 bytes |
 | Installed packages without provider extras | 29 |
-| Installation using available cached dependencies | 0.228 s |
-| Fresh process startup to readiness | 0.219 s |
+| Installation using available cached dependencies | 0.063 s |
+| Fresh process startup to readiness | 0.223 s |
 
 The source lockfile has **57 packages**, including all optional provider SDKs and
 test dependencies, versus 131 before this change. PyTorch, Transformers,
