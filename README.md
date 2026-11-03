@@ -206,6 +206,10 @@ SSH responses add base64 `ssh_stdout`/`ssh_stderr` and numeric `ssh_exit_status`
 For structured model replies, `LLM response.details` retains the raw model JSON
 rather than just the terminal text. Consumers comparing wire output should use
 the stream fields.
+Canonical decimal status strings from text-only models are normalized before
+strict validation; other malformed replies remain failures. Assessment audits
+keep interactive and exec output separate and require a distinct captured request
+for each SSH observation.
 
 ```sh
 uv run deceive profile validate demo-http

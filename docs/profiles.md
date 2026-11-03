@@ -162,6 +162,10 @@ corresponding text. Values must have the declared types; duplicate/unknown field
 invalid base64, tool requests, file references and state-transition fields fail
 validation. A single surrounding JSON Markdown fence is tolerated; explanatory
 text outside the object is rejected. Raw model text stays in telemetry.
+One narrow formatting normalization accepts a canonical ASCII decimal status
+string such as `"1"` and validates it as integer 1. Signs, leading zeros, whitespace,
+floating-point spellings, non-ASCII digits and out-of-range statuses remain
+invalid. No other fields are coerced and this adds no model retries.
 
 The runtime supplies the same bounded, structured history for deterministic and
 generated interactions, including streams and status. Model adapters remain

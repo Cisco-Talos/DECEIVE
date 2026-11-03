@@ -4,8 +4,10 @@ import base64
 import json
 
 
-def ssh_output_matches(record: dict, output: dict) -> bool:
+def ssh_output_matches(record: dict, output: dict, interactive: bool) -> bool:
     try:
+        if bool(record.get("interactive")) != interactive or record.get("ssh_response_error"):
+            return False
         body = base64.b64decode(record.get("ssh_stdout", record.get("details", "")), validate=True)
         stderr = base64.b64decode(record.get("ssh_stderr", ""), validate=True)
         if record.get("interactive"):
@@ -24,6 +26,7 @@ def audit(records: list[dict], observations: list[dict], allowed_profiles: set[s
     errors = []
     inputs, responses, summaries = {}, {}, {}
     paired = []
+    used_ssh_requests = set()
     required = {"timestamp", "level", "task_name", "src_ip", "src_port", "dst_ip", "dst_port",
                 "message", "sensor_name", "sensor_protocol"}
     for record in records:
@@ -42,6 +45,8 @@ def audit(records: list[dict], observations: list[dict], allowed_profiles: set[s
             if "ssh_stdout" in record and ("ssh_stderr" not in record or
                 type(record.get("ssh_exit_status")) is not int or not 0 <= record["ssh_exit_status"] <= 255):
                 errors.append("Invalid SSH output metadata")
+            if record.get("ssh_response_error"):
+                errors.append("Rejected SSH model reply lacks a captured wire response")
             request = record.get("request_id")
             if not request:
                 errors.append("Missing request correlation")
@@ -88,11 +93,20 @@ def audit(records: list[dict], observations: list[dict], allowed_profiles: set[s
             continue
         if observation["protocol"] == "ssh":
             outputs = observation.get("facts", {}).get("outputs", [])
+            action = observation["action"]
+            parameters = action.get("parameters", {})
+            interactive = bool(action.get("session") or parameters.get("interactive") or
+                               len(parameters.get("commands", [])) > 1)
             for output in outputs:
                 command = base64.b64encode(output["command"].encode()).decode()
-                if not any(before.get("details") == command and ssh_output_matches(after, output)
-                           for before, after in paired):
+                match = next((before["request_id"] for before, after in paired
+                    if before["request_id"] not in used_ssh_requests
+                    and before.get("details") == command
+                    and ssh_output_matches(after, output, interactive)), None)
+                if match is None:
                     errors.append("Client SSH input/output pair not found in telemetry")
+                else:
+                    used_ssh_requests.add(match)
         elif observation["protocol"] in {"http", "https"}:
             parameters = observation["action"]["parameters"]
             method = parameters.get("method", "GET").upper()

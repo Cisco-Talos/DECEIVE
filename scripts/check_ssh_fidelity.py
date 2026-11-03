@@ -21,7 +21,7 @@ class FixtureProvider:
     async def complete(self, messages: list[Message]) -> ModelResult:
         assert "SSH response format: json" in messages[0].content
         return ModelResult(json.dumps({"stdout_base64": "/wBwbGFpbg==",
-                                       "stderr": "failed\n", "exit_status": 7}))
+                                       "stderr": "failed\n", "exit_status": "7"}))
 
     async def close(self) -> None:
         pass
@@ -74,6 +74,7 @@ async def exercise(root: Path) -> dict:
     replies = [r for r in records if r["message"] == "LLM response"]
     assert len(replies) == 3
     assert all(base64.b64decode(r["ssh_stdout"]) == b"\xff\x00plain" for r in replies)
+    assert all(json.loads(base64.b64decode(r["details"]))["exit_status"] == "7" for r in replies)
     return {"passed": True, "sessions": 4, "live_model_calls": 0,
             "binary_streams": True, "exit_status": True, "private_status": True,
             "private_files": True}

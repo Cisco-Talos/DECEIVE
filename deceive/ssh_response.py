@@ -49,7 +49,13 @@ def parse_reply(text: str) -> Response:
     fenced = re.fullmatch(r"```(?:json)?\r?\n(.*?)\r?\n```", payload, re.DOTALL)
     if fenced:
         payload = fenced[1]
-    reply = SSHReply.model_validate(json.loads(payload, object_pairs_hook=unique_object))
+    value = json.loads(payload, object_pairs_hook=unique_object)
+    # Normalize only a canonical decimal spelling; the validated contract stays integer-only.
+    # Never coerce booleans, floats, signs, whitespace, non-ASCII digits or other fields.
+    if isinstance(value, dict) and isinstance(value.get("exit_status"), str):
+        if re.fullmatch(r"0|[1-9][0-9]{0,2}", value["exit_status"]):
+            value["exit_status"] = int(value["exit_status"])
+    reply = SSHReply.model_validate(value)
     return Response(body=stream_bytes(reply.stdout, reply.stdout_base64),
                     stderr=stream_bytes(reply.stderr, reply.stderr_base64),
                     exit_status=reply.exit_status, close=reply.close,

@@ -9,7 +9,7 @@ persistent deployment was performed.
 ## Tests and acceptance
 
 - Original SSH baseline: 26 tests passed. Assessment baseline: **105 tests passed**.
-- Current deterministic suite: **209 tests passed** on Darwin arm64,
+- Current deterministic suite: **220 tests passed** in 52.94 seconds on Darwin arm64,
   Python 3.11.15. This includes actual SSH, HTTP/1.1, HTTP/2 multiplexing, HTTP/3,
   binary content, authentication modes, isolated state, key reuse, migration,
   resource/deadline handling, startup rollback, observer failures, and offline
@@ -336,6 +336,59 @@ reports, decisions, checkpoints, results and dashboard remain under ignored
 `results/ssh-assessment-20261103/`. The owned target is stopped and retained; no
 assessment listener remains running. No commits or pushes were made by the loop.
 
+## SSH confirmation and audit correction — 2026-11-03
+
+The two-loop repairs were committed and pushed as `46f59a1` at the human's
+request, then the same run resumed for one additional assessment. Loop 3 matched
+loop 2's candidate fingerprint exactly and had median realism 90. Its protocol
+reviewer captured one intermittent `false` failure: the model returned
+`exit_status: "1"`, which the strict parser rejected, producing a sanitized
+session-unavailable response. An identical retry succeeded.
+
+The original audit incorrectly passed this failure by matching another
+interactive response for the same command. The controller invalidated that
+audit: the original reports/results remain unchanged, while
+`loop-3-audit-recheck.json` and `audit-rechecks.json` record the failed recheck.
+This round does not establish confirmation.
+
+Three failing audit regressions preceded fixes requiring matching interactive/
+exec modes, a distinct captured request per SSH observation and rejection of
+malformed model responses as valid wire captures. Two failing SSH boundary cases
+preceded a narrow canonical ASCII decimal-string status normalization. The
+validated response remains an integer 0–255; other schema fields, malformed
+spellings, booleans, fractions and range violations remain rejected. Raw model
+text remains intact and there are no automatic model retries or criteria changes.
+
+The repair changed the candidate, so the controller ran two replacement panels
+with four fresh reviewers each. Both assessed unchanged candidate `dd4632137b8d`:
+
+| Round | Median realism | Correctness | Rechecked telemetry | Qualification |
+| --- | ---: | --- | --- | --- |
+| 3 (historical) | 90 | Passed | Failed | Invalidated audit; not confirmation |
+| 4 | 90 | Passed | Passed | Passing new candidate |
+| 5 | 90 | Passed | Passed | Confirms unchanged candidate |
+
+Every reviewer in rounds 4–5 found no material in-scope tell. Current replay and
+boundary evidence resolve the intermittent-format finding; there are no remaining
+verified unresolved findings. Finalization reports `count_complete` with
+`qualified: true` and a fresh candidate. The last two rounds satisfy the default
+quality predicate; no older round is needed for that result.
+
+The separate `reviewed-dashboard/dashboard.svg` applies the recorded historical
+audit rechecks, clearly marks round 3 failed, and retains original reviewer scores.
+The canonical run directory retains the original contemporaneous audit reports.
+Both the derived chart and its structured input are saved alongside the originals;
+the derived SVG was parsed and visually inspected. Rechecks pass on rounds 1, 2,
+4 and 5 and fail on round 3.
+
+All **220 deterministic tests**, installed-wheel checks and native ARM64 image
+checks pass. Artifact checks exercise string-status normalization while preserving
+raw model text, private files, actual SSH/HTTP/1.1–3 and unchanged frozen CVE suites.
+The final Docker lifecycle smoke also passes. Across all five rounds, runtime
+telemetry and internal acceptance reports record **117 model calls**, 96,361 input
+tokens and 3,833 output tokens. Native-agent usage/cost remains unavailable.
+The target is stopped and retained; temporary credential copies were removed.
+
 ## Container measurements
 
 Docker Engine 29.9.2 runs Linux/aarch64 on this workstation. ARM64 is the only
@@ -348,6 +401,7 @@ performance promises.
 | `deceive:interface-arm64` (native) | 384,095,894 | 1.579 s | 50 |
 | `deceive:ssh-fidelity-arm64` (native) | 384,143,198 | 1.568 s | 50 |
 | Assessed candidate `889117e472e3` (native) | 384,188,468 | 1.956 s | 50 |
+| Confirmed candidate image `b5f1d09cf173` (native) | 384,191,167 | 1.427 s | 50 |
 
 Ready time measures container creation/start through the local health probe with
 an existing image and a new data volume. It excludes image pulling. Stored image
@@ -366,10 +420,10 @@ triggered or published as part of this work.
 
 | Measurement | Result |
 | --- | ---: |
-| Wheel, excluding dependencies | 117,856 bytes |
+| Wheel, excluding dependencies | 118,320 bytes |
 | Installed packages without provider extras | 29 |
-| Installation using available cached dependencies | 0.282 s |
-| Fresh process startup to readiness | 0.273 s |
+| Installation using available cached dependencies | 0.051 s |
+| Fresh process startup to readiness | 0.222 s |
 
 The source lockfile has **57 packages**, including all optional provider SDKs and
 test dependencies, versus 131 before this change. PyTorch, Transformers,

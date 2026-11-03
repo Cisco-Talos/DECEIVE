@@ -22,6 +22,8 @@ async def connect(runtime):
     ({"stdout": "two\n\n", "stderr": "problem\n", "exit_status": 7}, b"two\n\n", b"problem\n", 7),
     ({"stdout": "\u03bb\x00\r\n", "stderr": "", "exit_status": 0}, "\u03bb\x00\r\n".encode(), b"", 0),
     ({"stdout_base64": "/wA=", "stderr_base64": "gAo=", "exit_status": 2}, b"\xff\x00", b"\x80\n", 2),
+    ({"stdout": "", "stderr": "", "exit_status": "1"}, b"", b"", 1),
+    ({"stdout": "plain", "exit_status": "255"}, b"plain", b"", 255),
 ])
 async def test_generated_exec_preserves_stream_bytes_status_and_model_log(runtime_factory, payload, stdout, stderr, code):
     runtime = await runtime_factory("ssh", model=True)
@@ -73,6 +75,8 @@ async def test_interactive_status_query_and_bare_exit_follow_last_command(runtim
     '{"stdout_base64":"not-base64","exit_status":0}',
     '{"stdout":"private-marker","exit_status":0,"exit_status":7}',
     '{"stdout":"private-marker","exit_status":0,"close":"false"}',
+    '{"exit_status":"01"}', '{"exit_status":"1.0"}', '{"exit_status":"+1"}',
+    '{"exit_status":" 1"}', '{"exit_status":"256"}', '{"exit_status":"١"}',
     'Explanation\n```json\n{"stdout":"private-marker","exit_status":0}\n```'])
 async def test_invalid_generated_shell_reply_fails_without_exposing_wrapper(runtime_factory, raw):
     runtime = await runtime_factory("ssh", model=True)
