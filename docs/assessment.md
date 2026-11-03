@@ -74,6 +74,10 @@ checks that the installed module bytes actually change. This addresses uv's
 [local-project cache heuristic](https://docs.astral.sh/uv/concepts/cache/) while
 retaining dependency caching. Explicit `build: false` images retain their own
 recorded digest and require operator-controlled rebuilds as described above.
+The image also contains installable skills and their reading assets. Changes to
+those packaged assets or the build hook rebuild the image; assessment-driver-only
+changes still reuse unchanged runtime images. Immutable build snapshots include
+the assets and the image attestation verifies their installed bytes.
 
 ## Active probes
 

@@ -122,6 +122,27 @@ extras are `openai` (also Azure), `ollama`, `bedrock`, `gemini`, and `all-provid
 
 ## Deployment and profiles
 
+Install the operator, authoring and assessment skills into your agent's user
+directory from the host CLI:
+
+```sh
+deceive install-skills                  # Both agents (default)
+deceive install-skills --agent claude
+deceive install-skills --agent chatgpt
+deceive help
+deceive help profile evaluate
+```
+
+Use `uv run deceive` instead of `deceive` in a checkout. Claude Code skills go to
+`~/.claude/skills`; the local ChatGPT/Codex agent uses `~/.agents/skills`.
+Rerunning synchronizes managed skills: updates existing files, adds new skills
+and removes obsolete managed skills/references. Unrelated files are preserved.
+Local edits cause an actionable conflict before installation; `--force` explicitly
+replaces conflicting files. The wheel bundles the skills and reading assets,
+so no checkout or download is needed for installation. Start a new agent session
+if skills are not yet visible. Every command also accepts `-h` and `--help`.
+See [installation and updates](docs/operations.md#install-and-update-agent-skills).
+
 Discover and inspect profiles with `deceive profile list` and `deceive profile
 show ID`. Add `--directory DIR` for an authored catalog and `--json` for a
 versioned operation result. Named background deployments use the standard image:

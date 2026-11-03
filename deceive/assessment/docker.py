@@ -13,7 +13,7 @@ import time
 
 from deceive.assessment.models import Spec, Target
 from deceive.assessment.drivers import Drivers
-from deceive.assessment.workspace import CLIENT_FILES, stage_profile, target_deployment, write_json
+from deceive.assessment.workspace import CLIENT_FILES, packaged_assets, stage_profile, target_deployment, write_json
 from deceive.composition import resolve
 from deceive.config import fingerprint, load_profile, read_yaml
 from deceive.runtime import Runtime
@@ -55,6 +55,7 @@ class Docker:
                     if name.startswith("deceive/") and not name.startswith((
                         "deceive/assessment/", "deceive/profiles/", "deceive/acceptance/"))
                     and name not in CLIENT_FILES}
+        expected.update(packaged_assets(candidate["files"]))
         attestation = self.verify_image(image, expected)
         write_json(loop_dir / "image-attestation.json", attestation)
         return image

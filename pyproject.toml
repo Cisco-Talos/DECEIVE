@@ -31,6 +31,8 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["deceive"]
 
+[tool.hatch.build.hooks.custom]
+
 [dependency-groups]
 dev = [
     "pytest",

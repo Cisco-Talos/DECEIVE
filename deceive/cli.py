@@ -45,6 +45,15 @@ def parser() -> argparse.ArgumentParser:
     output_argument(result)
     result.add_argument("--version", action="version", version="%(prog)s " + version("deceive"))
     commands = result.add_subparsers(dest="command", required=True)
+    help_command = commands.add_parser("help", help="Show help for any command")
+    output_argument(help_command)
+    help_command.add_argument("topic", nargs="*", metavar="COMMAND")
+    installer = commands.add_parser("install-skills", help="Install or update user-wide agent skills")
+    output_argument(installer)
+    installer.add_argument("--agent", choices=["all", "claude", "chatgpt"], default="all",
+                           help="Agent to install for (default: all)")
+    installer.add_argument("--force", action="store_true",
+                           help="Replace locally edited or conflicting DECEIVE skill files")
     from deceive.assessment.cli import add_parser
     add_parser(commands)
     serve = commands.add_parser("serve", help="Start protocol listeners")
@@ -206,7 +215,8 @@ def main(argv: list[str] | None = None) -> int:
     operation = "cli.parse"
     try:
         try:
-            args = parser().parse_args(argv)
+            command_parser = parser()
+            args = command_parser.parse_args(argv)
             json_output = getattr(args, "json_output", False)
         except SystemExit as exc:
             if json_output and exc.code:
@@ -218,7 +228,24 @@ def main(argv: list[str] | None = None) -> int:
                                    else "." + args.action if hasattr(args, "action") else "")
         outcome = OperationResult(operation)
         lines = []
-        if args.command == "assess":
+        if args.command == "help":
+            target = command_parser
+            for name in args.topic:
+                action = next((a for a in target._actions if isinstance(a, argparse._SubParsersAction)), None)
+                if action is None or name not in action.choices:
+                    raise ValueError(f"Unknown help topic: {' '.join(args.topic)}")
+                target = action.choices[name]
+            outcome.data = {"topic": args.topic, "help": target.format_help()}
+            lines = [outcome.data["help"].rstrip()]
+        elif args.command == "install-skills":
+            from deceive.install_skills import install
+            outcome.data = install(args.agent, force=args.force)
+            lines = [f'{row["agent"]}: {row["directory"]} '
+                     f'(added {len(row["added"])}, updated {len(row["updated"])}, removed {len(row["removed"])})'
+                     for row in outcome.data["agents"]]
+            lines.append("Skills: " + ", ".join(outcome.data["skills"]))
+            lines.append("Start a new agent session if the skills are not shown yet.")
+        elif args.command == "assess":
             from deceive.assessment.cli import execute
             outcome.data, outcome.exit_code = execute(args)
             # Preserve existing assessment JSON unless the common envelope is requested.

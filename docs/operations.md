@@ -8,6 +8,11 @@ is introduced. `serve` remains the foreground/native execution path.
 
 ## Find and validate profiles
 
+`deceive help` shows top-level help; `deceive help deployment start` or
+`deceive help assess probe` shows a nested command without requiring its arguments.
+Every command and subcommand supports both `-h` and `--help`. `help --json` returns
+the help text in the standard operation result.
+
 ```sh
 deceive profile list
 deceive profile list --vulnerabilities --json
@@ -165,5 +170,39 @@ Creation uses [deceive-author](../skills/deceive-author/SKILL.md), acceptance us
 `profile evaluate`, and active loops use
 [deceive-assess](../skills/deceive-assess/SKILL.md). The umbrella skill routes these
 operations; it does not implement a second authoring or assessment engine. Skills
-remain repository-local unless separately installed. No PR, merge, publication
+can be installed user-wide with `deceive install-skills`. No PR, merge, publication
 or automatic source commit is part of these operations.
+
+## Install and update agent skills
+
+```sh
+deceive install-skills --agent all
+deceive install-skills --agent claude
+deceive install-skills --agent chatgpt --json
+```
+
+`all` is the default and installs `deceive`, `deceive-author` and `deceive-assess`
+for both agents, whether or not their executables are currently installed.
+Claude Code's documented personal location is
+[`~/.claude/skills`](https://code.claude.com/docs/en/skills#choose-where-skills-load).
+The `chatgpt` choice targets the local ChatGPT/Codex agent using its documented
+[`~/.agents/skills`](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills)
+user directory. A local install does not upload skills to a web chat service.
+Run the installer on the agent's host; running it inside a container only affects
+that container's user home.
+
+Each skill includes its reading references and examples, with local links
+rewritten for the installed layout. The source checkout is not needed to install
+or read the skills. Actual assessment repair work still requires a DECEIVE Git
+checkout and Docker; runtime CLI commands require the installed application.
+
+Rerun the same command after upgrading DECEIVE. An ownership/hash manifest per
+agent synchronizes existing skills, adds newly bundled skills and deletes retired
+managed files/skills. Extra personal files and unrelated skills are preserved;
+obsolete directories are removed when empty. Repeated unchanged installs are
+idempotent. Unknown or locally edited conflicting files stop the selected update
+before any changes; preserve your edits or use `--force` to replace those files.
+`--force` never authorizes following symlinks or deleting unrelated files.
+Manually installed older copies without a manifest may need `--force` on first
+adoption. Skills become visible through the agent's discovery mechanism; start a
+new session if they are not shown yet.

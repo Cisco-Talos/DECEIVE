@@ -16,7 +16,7 @@ import httpx
 
 from deceive.clients import h3_connect
 from deceive.assessment.docker import Docker
-from deceive.assessment.workspace import source_files
+from deceive.assessment.workspace import source_files, packaged_assets
 
 
 def docker(*args: str) -> str:
@@ -27,6 +27,8 @@ async def verify(image: str) -> dict:
     root = Path(__file__).resolve().parents[1]
     expected = {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest()
                 for p in source_files(root) if p.relative_to(root).parts[0] == "deceive"}
+    expected.update(packaged_assets({str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest()
+                                    for p in source_files(root)}))
     attestation = Docker().verify_image(image, expected)
     token = "deceive-smoke-" + uuid.uuid4().hex[:12]
     volume = token + "-data"
@@ -144,6 +146,10 @@ asyncio.run(run())
     measurements["ssh_fidelity"] = json.loads(docker(
         "run", "--rm", "--platform", "linux/" + architecture, "--network", "none",
         "--entrypoint", "python", image, "-c", ssh_program))
+    skills_program = Path(__file__).with_name("check_installed_skills.py").read_text()
+    measurements["skills"] = json.loads(docker(
+        "run", "--rm", "--platform", "linux/" + architecture, "--network", "none",
+        "--entrypoint", "python", image, "-c", skills_program))
     # Containerd may report only compressed content before a foreign-platform
     # image's first run. Measure after unpacking for comparable stored sizes.
     measurements["image_bytes"] = int(docker("image", "inspect", image, "--format", "{{.Size}}"))

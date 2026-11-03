@@ -8,6 +8,10 @@ COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --all-extras --no-dev --no-install-project
 COPY README.md LICENSE ./
 COPY deceive ./deceive
+COPY hatch_build.py ./
+COPY skills ./skills
+COPY docs ./docs
+COPY examples ./examples
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --all-extras --no-dev --no-editable --reinstall-package deceive
 
 FROM python:3.11-slim-bookworm AS runtime

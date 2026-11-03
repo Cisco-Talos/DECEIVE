@@ -9,7 +9,7 @@ persistent deployment was performed.
 ## Tests and acceptance
 
 - Original SSH baseline: 26 tests passed. Assessment baseline: **105 tests passed**.
-- Current deterministic suite: **220 tests passed** in 52.94 seconds on Darwin arm64,
+- Current deterministic suite: **239 tests passed** on Darwin arm64,
   Python 3.11.15. This includes actual SSH, HTTP/1.1, HTTP/2 multiplexing, HTTP/3,
   binary content, authentication modes, isolated state, key reuse, migration,
   resource/deadline handling, startup rollback, observer failures, and offline
@@ -388,6 +388,30 @@ The final Docker lifecycle smoke also passes. Across all five rounds, runtime
 telemetry and internal acceptance reports record **117 model calls**, 96,361 input
 tokens and 3,833 output tokens. Native-agent usage/cost remains unavailable.
 The target is stopped and retained; temporary credential copies were removed.
+
+## Skill installer/updater and CLI help — 2026-11-03
+
+`deceive install-skills` installs all three bundled skills into both supported
+agents' user directories by default. Agent selection, local-edit conflict
+preflight, explicit force replacement, adding/updating/removing managed skills,
+stale reference removal, extra/unrelated file preservation, idempotency, malformed
+manifests and symlink rejection have automated coverage using temporary homes.
+The recursive CLI test exercises both `-h` and `--help` on every command; nested
+`deceive help` resolves command help without required operational arguments.
+
+The wheel contains canonical skill assets, reading docs and examples. Installation
+rewrites relative references for the user layout. Tests walk all installed Markdown
+links and verify their local targets. The installed-wheel and offline ARM64
+container checks also simulate upgrading an older distribution: update one skill,
+add an absent skill, remove a retired skill and preserve an unrelated skill, then
+repeat unchanged installation. No real user skill directory is changed by these
+checks and no live model is called.
+
+Build snapshots and image fingerprints include the hook and packaged assets;
+installed-image attestation covers their exact bytes. Tests also ensure private
+key/environment files are excluded. Build/rebuild and Docker lifecycle checks
+exercise the new snapshot layout. Detailed local logs and measurements are under
+ignored `results/skill-installer-20261103/`. Provider dependencies are unchanged.
 
 ## Container measurements
 

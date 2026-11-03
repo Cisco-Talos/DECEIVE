@@ -11,6 +11,7 @@
 * Implement the planned HTTP/2 and HTTP/3 CVE profiles after agreeing their acceptance criteria; address method case preservation/virtual proxy semantics and pre-validation HTTP/3 FIN observation with tests first (docs/protocol-capability-findings.md).
 
 Completed on codex/deception-profiles:
+* User-wide install-skills synchronization for Claude and ChatGPT/Codex: bundled portable assets, managed updates/additions/removals, conflict protection; top-level help and both help flags throughout the CLI.
 * Confirmation-loop regressions prevent SSH telemetry from borrowing interactive responses or reusing one capture for multiple observations; canonical model status strings normalize without weakening other schema checks or adding retries.
 * Opt-in bounded private virtual-file behavior unifies basic reads/listings/mutations and model facts; linux-ssh v3 repairs active-review stream/size/state findings. Assessment Docker accepts explicit read-only AWS profile mounts.
 * Structured SSH model replies preserve stdout/stderr bytes and exit status; shared assessment/evaluation clients retain binary/unterminated output. Private status, telemetry and legacy compatibility have deterministic and bounded Bedrock checks.

@@ -90,11 +90,22 @@ def target_deployment(spec: Spec, target: Target) -> Deployment:
 
 
 def source_files(root: Path) -> list[Path]:
-    names = {"pyproject.toml", "uv.lock", "Dockerfile", ".dockerignore", "README.md", "LICENSE"}
-    return sorted([p for p in root.iterdir() if p.is_file() and p.name in names] + [
-        p for folder in ("deceive", "tests", "skills/deceive-assess")
+    names = {"pyproject.toml", "uv.lock", "Dockerfile", ".dockerignore", "README.md", "LICENSE", "hatch_build.py"}
+    assets = list((root / "docs").glob("*.md")) + list((root / "examples").glob("*.yaml"))
+    assets += list((root / "examples/profiles").glob("*.yaml"))
+    assets = [p for p in assets if not p.name.startswith(".")]
+    return sorted([p for p in root.iterdir() if p.is_file() and p.name in names] + assets + [
+        p for folder in ("deceive", "tests", "skills")
         for p in (root / folder).rglob("*") if p.is_file() and
-        "__pycache__" not in p.parts and p.suffix not in {".pyc", ".key", ".pem"}])
+        "__pycache__" not in p.parts and p.suffix not in {".pyc", ".key", ".pem"}
+        and not p.name.endswith("_host_key")
+        and not any(part.startswith(".") for part in p.relative_to(root).parts)])
+
+
+def packaged_assets(hashes: dict[str, str]) -> dict[str, str]:
+    return {"deceive/_skill_assets/" + name: digest for name, digest in hashes.items()
+            if name.startswith(("skills/", "docs/", "examples/"))
+            or name in {"README.md", "LICENSE"}}
 
 
 def checkpoint(root: Path, destination: Path) -> dict:
@@ -110,7 +121,7 @@ def checkpoint(root: Path, destination: Path) -> dict:
     (destination / "working-tree.patch").write_text(patch)
     (destination / "working-tree.patch").chmod(0o600)
     server = {k: v for k, v in hashes.items() if not k.startswith((
-        "deceive/assessment/", "deceive/profiles/", "deceive/acceptance/", "tests/", "skills/"))
+        "deceive/assessment/", "deceive/profiles/", "deceive/acceptance/", "tests/"))
         and k not in CLIENT_FILES}
     return {"files": hashes, "source_id": fingerprint(hashes),
             "server_id": fingerprint(server), "client_id": fingerprint({
