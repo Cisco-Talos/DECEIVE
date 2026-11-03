@@ -1,5 +1,4 @@
-* Exercise the stabilized feature branch in native ARM64 remote CI (draft PR approval pending).
-* Unified interface foundation: profile catalog, managed deployment start/stop/list/status, shared structured operation results, then the umbrella skill.
+* Remote ARM64 CI remains deferred until the user is ready for a PR; do not open a PR to dev now.
 * Optional Linux amd64 container builds and native CI, after the ARM64 implementation is stable.
 * DNS/NTP and additional protocol adapters, with protocol-specific limits and evaluation clients.
 * Explicit unknown-SSH-user authentication policy; preserve current wildcard behavior until implemented.
@@ -10,6 +9,8 @@
 * HTTP/2 method case preservation/virtual proxy semantics and pre-validation HTTP/3 FIN observation, guided by capability tests before new CVE behavior (docs/protocol-capability-findings.md).
 
 Completed on codex/deception-profiles:
+* Fresh umbrella-skill operator acceptance: composed deployment identity reuse, tests-first fictional H2/H3 profile, one bounded four-reviewer assessment and final dashboard; verified client-only HEAD metadata repair with original panel evidence preserved.
+* Unified CLI profile catalog/show, owned Docker deployment start/stop/list/status/remove, versioned operation results and repository-local deceive umbrella skill; local wheel/container/lifecycle checks pass.
 * Shared runtime, bounded sessions/input/output/model calls, session-history cleanup and one-summary ownership.
 * Profile-based SSH and HTTP/HTTPS 1.1–3, direct optional SDK providers, and packaged deployment tooling.
 * Human-approved sudo CVE-2019-14287 and Apache CVE-2021-41773 profiles and acceptance suites.

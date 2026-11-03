@@ -7,17 +7,21 @@ from pathlib import Path
 
 from deceive.assessment.models import Decisions, ProbeAction, Review
 from deceive.assessment.workspace import load_json, prepare, write_json
+from deceive.operations import output_argument
 
 
 def add_parser(commands) -> None:
     assess = commands.add_parser("assess", help="Development assessment lifecycle and active probes")
+    output_argument(assess)
     actions = assess.add_subparsers(dest="assessment_action", required=True)
     start = actions.add_parser("prepare")
+    output_argument(start)
     start.add_argument("--spec", type=Path, required=True)
     start.add_argument("--results-dir", type=Path, required=True)
     start.add_argument("--root", type=Path, default=Path.cwd())
     for name in ("begin-loop", "probe", "record-review", "end-loop", "status", "resume", "finish", "render", "cleanup"):
         action = actions.add_parser(name)
+        output_argument(action)
         action.add_argument("--run", type=Path, required=True)
         if name == "begin-loop":
             action.add_argument("--retry", action="store_true")
@@ -38,7 +42,7 @@ def add_parser(commands) -> None:
             action.add_argument("--note", help="Diagnosis/evidence required for a manually declared blocker")
 
 
-def run(args: argparse.Namespace) -> int:
+def execute(args: argparse.Namespace) -> tuple[dict, int]:
     from deceive.assessment import engine
     action = args.assessment_action
     if action == "prepare":
@@ -75,7 +79,12 @@ def run(args: argparse.Namespace) -> int:
             if args.note:
                 write_json(directory / "final-note.json", {"reason": args.reason, "note": args.note})
             result = asyncio.run(engine.finish(directory, remove=args.remove, reason=args.reason))
-    print(json.dumps(result, indent=2))
     if action == "finish":
-        return 0 if result["qualified"] and not result["teardown_errors"] else 1
-    return 0
+        return result, 0 if result["qualified"] and not result["teardown_errors"] else 1
+    return result, 0
+
+
+def run(args: argparse.Namespace) -> int:
+    result, code = execute(args)
+    print(json.dumps(result, indent=2))
+    return code

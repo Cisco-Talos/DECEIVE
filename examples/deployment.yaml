@@ -5,6 +5,9 @@ schema_version: 1
 # deceive config validate --config deployment.yaml --deception ANOTHER_PROFILE
 # CLI --deception / --profile selections add to this file; serve revalidates.
 # Active assessment uses the separate assessment.yaml spec; production YAML is unchanged.
+# Named Docker execution reuses this YAML: deceive deployment start NAME --config deployment.yaml.
+# See docs/operations.md: localhost publishing is the default, data_dir maps to a named
+# volume, and managed file telemetry maps to /data/telemetry.jsonl. Native serve retains paths.
 data_dir: ./data
 sensor_name: deceive
 # stdout JSONL is the default. Uncomment to write a file relative to this YAML.

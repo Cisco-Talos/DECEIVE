@@ -53,6 +53,8 @@ def test_additive_selection_deduplicates_and_preserves_existing_listener(tmp_pat
     plan = resolve(deployment_from_args(args))
     assert [l.name for l in plan.listeners] == ["existing"]
     assert [p.id for p in plan.members["existing"]] == ["first", "second"]
+    materialized = Deployment(listeners=plan.listeners)
+    assert [p.id for p in resolve(materialized).members["existing"]] == ["first", "second"]
 
 
 def test_cli_and_config_validation_are_read_only_and_match_serve(tmp_path, capsys, monkeypatch):

@@ -18,6 +18,8 @@ from deceive.assessment.models import Spec, Target
 from deceive.config import fingerprint, load_deployment, load_profile, read_yaml, relative_path
 from deceive.models import Deception, Deployment
 
+CLIENT_FILES = {"deceive/clients.py", "deceive/evaluate.py", "deceive/catalog.py", "deceive/managed.py"}
+
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
@@ -107,11 +109,11 @@ def checkpoint(root: Path, destination: Path) -> dict:
     (destination / "working-tree.patch").chmod(0o600)
     server = {k: v for k, v in hashes.items() if not k.startswith((
         "deceive/assessment/", "deceive/profiles/", "deceive/acceptance/", "tests/", "skills/"))
-        and k not in {"deceive/clients.py", "deceive/evaluate.py"}}
+        and k not in CLIENT_FILES}
     return {"files": hashes, "source_id": fingerprint(hashes),
             "server_id": fingerprint(server), "client_id": fingerprint({
                 k: v for k, v in hashes.items() if k.startswith("deceive/assessment/")
-                or k in {"deceive/clients.py", "deceive/evaluate.py"}}),
+                or k in CLIENT_FILES}),
             "review_id": fingerprint({k: v for k, v in hashes.items() if k.startswith("skills/")}),
             "checks_id": fingerprint({k: v for k, v in hashes.items() if k.startswith("tests/")}),
             "branch": git(root, "branch", "--show-current").strip(),

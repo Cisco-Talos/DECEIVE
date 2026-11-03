@@ -151,6 +151,7 @@ def _compose(members: list[Profile]) -> tuple[Profile, dict[str, Profile]]:
 def resolve(deployment: Deployment, supplied: dict[str, Profile] | None = None) -> Plan:
     plan = Plan()
     selected: dict[str, Profile] = {}
+    references = {}
 
     def unique(profiles: list[Profile]) -> list[Profile]:
         result = {}
@@ -181,9 +182,11 @@ def resolve(deployment: Deployment, supplied: dict[str, Profile] | None = None) 
             injected = supplied is not None and listener.name in supplied
             members = ([supplied[listener.name]] if injected else
                        [load_profile(ref) for ref in (listener.profiles or [listener.profile])])
+            if not injected:
+                for member, reference in zip(members, listener.profiles or [listener.profile]):
+                    references.setdefault(member.id, reference)
             add(listener.model_copy(deep=True), members, injected)
     groups = {}
-    references = {}
     candidates = []
     for deception in deployment.deceptions:
         profile = load_profile(deception.profile)
@@ -217,6 +220,8 @@ def resolve(deployment: Deployment, supplied: dict[str, Profile] | None = None) 
                 plan.members[listener.name] = members
                 plan.owners[listener.name] = owners
                 plan.bases[listener.name] = base
+                listener.profile = None
+                listener.profiles = [references[member.id] for member in members]
                 selected[profile.id] = profile
                 continue
         key = (fingerprint(base), _transport(profile), _port(profile))

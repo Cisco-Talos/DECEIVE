@@ -43,6 +43,17 @@ def main() -> None:
             cwd=root, env=env, text=True))
         for name in ("demo-http", "linux-ssh", "sudo-2019-14287", "apache-2021-41773"):
             subprocess.run([str(binary), "profile", "validate", name], cwd=root, env=env, check=True)
+        catalog = json.loads(subprocess.check_output([str(binary), "profile", "list", "--json"],
+                                                    cwd=root, env=env, text=True))
+        assert catalog["ok"] and catalog["operation"] == "profile.list"
+        assert {row["id"] for row in catalog["data"]["profiles"]} >= {"demo-http", "sudo-2019-14287"}
+        shown = json.loads(subprocess.check_output([str(binary), "profile", "show", "sudo-2019-14287", "--json"],
+                                                  cwd=root, env=env, text=True))
+        assert shown["data"]["definition"]["id"] == "sudo-2019-14287"
+        managed = root / "managed-absent"
+        listing = json.loads(subprocess.check_output([str(binary), "deployment", "list", "--state-dir", str(managed), "--json"],
+                                                    cwd=root, env=env, text=True))
+        assert listing["ok"] and not listing["data"]["deployments"] and not managed.exists()
         subprocess.run([str(binary), "config", "validate", "--deception", "sudo-2019-14287",
                         "--deception", "apache-2021-41773", "--data-dir", str(root / "not-created")],
                        cwd=root, env=env, check=True)
@@ -65,6 +76,10 @@ async def run():
         for version in ('2', '3'):
             suite = yaml.safe_load(files('deceive').joinpath('acceptance/demo-http.yaml').read_text())
             suite['http_version'] = version
+            if version == '3':
+                suite['cases'].append({'id': 'installed-head', 'steps': [
+                    {'method': 'HEAD', 'path': '/download', 'expect': {'status': 200, 'body': '',
+                        'headers': [['content-length', '4']]}}]})
             path = root / ('http-' + version + '.json')
             path.write_text(json.dumps(suite))
             report = await evaluate('demo-http', path, root / ('http-' + version))

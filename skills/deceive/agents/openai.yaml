@@ -1,0 +1,4 @@
+interface:
+  display_name: "DECEIVE"
+  short_description: "Run, inspect, create and assess DECEIVE deceptions"
+  default_prompt: "Use $deceive to help me manage and improve my deceptions."

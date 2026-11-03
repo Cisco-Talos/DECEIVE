@@ -9,7 +9,7 @@ persistent deployment was performed.
 ## Tests and acceptance
 
 - Original SSH baseline: 26 tests passed. Assessment baseline: **105 tests passed**.
-- Current deterministic suite: **153 tests passed** in 45.70 seconds on Darwin arm64,
+- Current deterministic suite: **176 tests passed** in 53.22 seconds on Darwin arm64,
   Python 3.11.15. This includes actual SSH, HTTP/1.1, HTTP/2 multiplexing, HTTP/3,
   binary content, authentication modes, isolated state, key reuse, migration,
   resource/deadline handling, startup rollback, observer failures, and offline
@@ -131,7 +131,7 @@ uncertain requests. Focused regressions and the full suite pass.
 
 Current evidence and the visually inspected dashboard are under ignored
 `results/stabilization-20261102/`. Its five assessment containers are stopped and
-retained. Remote ARM64 CI awaits draft-PR approval. The 2026-11-03 Bedrock check
+retained. Remote ARM64 CI is deferred until the human is ready for a PR. The 2026-11-03 Bedrock check
 below completes the separate native live-provider integration gate; it does not
 refresh historical native realism-panel scores after source changes.
 
@@ -159,6 +159,77 @@ These bounded observations establish integration, not general realism or exact
 terminal byte fidelity. Local evidence is under ignored
 `results/bedrock-ssh-20261103/`; no persistent listener remains.
 
+## Unified operator interface — 2026-11-03
+
+The catalog, named Docker deployment lifecycle and versioned JSON results reuse
+the existing CLI/configuration, runtime validation, profiles, evaluator and
+assessment helpers. The repository-local `deceive` umbrella skill routes natural
+language to these operations and the existing authoring/assessment workflows.
+Its metadata validates and it remains repository-local. A fresh operator-agent
+acceptance pass and four independent active reviewers are recorded below.
+
+The public managed CLI passes real SSH and HTTPS/1.1–3 probes, including HTTP/2–3
+multiplexing, combined YAML/CLI selection, complete base/relative prompt/binary
+asset snapshots, explicit TCP/UDP discovery, stable restart bindings and data,
+and ownership-scoped teardown. Shared external assertions pass the reference
+CVEs' base-deployment cases; protected variants remain separate and are still
+covered by full installed-wheel/container acceptance checks. Mocked lifecycle
+regressions cover foreign ownership, changed options/configuration, readiness
+failure, failure before container creation, data retention and AWS configuration
+without live calls.
+
+The real snapshot test exposed CLI-added members disappearing when a resolved
+listener was materialized without its original `deceptions`. A failing resolver
+regression preceded the shared repair. Container snapshots now retain that exact
+resolved selection. The updated wheel check exercises catalog discovery and
+JSON results outside the checkout; container CI now includes the managed CLI
+smoke. No additional runtime package, CVE or runtime model call was introduced.
+
+### Fresh operator acceptance
+
+A fresh-context agent used the umbrella skill to discover/inspect the catalog,
+validate and deploy metrics plus diagnostics, and verify actual H2/H3 responses
+before/after stop/restart. Container/image/volume IDs, member fingerprints,
+bindings and generated TLS identity remained stable. It then authored a local
+fictional Harbor Queue 1.2 profile after freezing seven cases for each protocol.
+Genuine missing-behavior red runs preceded implementation, and the unchanged
+suites passed 7/7 on actual HTTP/2 and 7/7 on HTTP/3. Setup/socket-permission
+failures were recorded separately and were not counted as behavior failures.
+
+Exactly one fixed assessment loop used four fresh-context native reviewers with
+20 actions each, covering both protocol versions. Correctness and telemetry
+passed; every reviewer reported realism 90 with no profile findings. The run
+ended `count_complete`. Its two-round confirmation policy remained unchanged,
+so final qualification was false and finish returned 1. This completed the
+workflow test without claiming quality success or a measured fidelity percentage.
+The inspected SVG, original reports, frozen hashes, command history and evidence
+export remain under ignored `results/operator-acceptance-20261103/`.
+
+The protocol reviewer preserved repeat H3 HEAD failures as client/transport
+uncertainty. After the frozen panel completed, three real-wire regressions
+reproduced those failures. The locked aioquic client's length-validation path
+was treating HEAD metadata as a missing body, contrary to
+[HTTP HEAD semantics](https://www.rfc-editor.org/rfc/rfc9110.html#section-9.3.2).
+A narrow client connection wrapper now tracks HEAD streams and preserves their
+headers while requiring zero response content. Normal GET length validation is
+unchanged; tracking is cleaned on completion/reset/connection termination.
+The normal and FIN clients share the wrapper, with regression guards for invalid
+lengths, actual HEAD content and method case. Its aioquic framing-hook dependency
+is exercised against the lockfile and installed artifacts; the existing aioquic
+package now has an explicit `>=1.7,<2` floor/range, with no additional packages.
+
+A separate parent-owned diagnostic replayed HEAD against the unchanged Harbor
+profile and original server image: H2, H3 and standalone FIN all returned empty
+405 responses with the original length metadata; subsequent GET on the same
+H3 connection passed. This verifies the client repair without altering the
+historical panel scores or claiming a fresh panel for the changed client.
+All exercise/diagnostic resources were removed, preserving the nine unrelated
+stopped assessment containers. No live runtime provider or AWS credentials were
+used. No new CVE or public deployment was added.
+
+Current local evidence is under ignored `results/unified-interface-20261103/`.
+No PR, merge or publication was performed; ARM64 remote CI remains deferred.
+
 ## Container measurements
 
 Docker Engine 29.9.2 runs Linux/aarch64 on this workstation. ARM64 is the only
@@ -168,13 +239,13 @@ performance promises.
 
 | Artifact | Docker-reported stored bytes after unpacking | Ready time | Packages |
 | --- | ---: | ---: | ---: |
-| `deceive:bedrock-ssh-arm64` (native) | 383,944,508 | 2.447 s | 50 |
+| `deceive:interface-arm64` (native) | 384,095,894 | 1.579 s | 50 |
 
 Ready time measures container creation/start through the local health probe with
 an existing image and a new data volume. It excludes image pulling. Stored image
 size is measured after first unpacking, so lazy-unpacked foreign images are not
 incorrectly compared using compressed content alone; it is not a download size.
-The standard image also verifies installed source/assets against 46 expected
+The standard image also verifies installed source/assets against 49 expected
 files. A separate warm-cache rebuild changes only copied Python source while
 retaining identical build metadata, then verifies the changed installed bytes.
 
@@ -187,10 +258,10 @@ triggered or published as part of this work.
 
 | Measurement | Result |
 | --- | ---: |
-| Wheel, excluding dependencies | 98,497 bytes |
+| Wheel, excluding dependencies | 110,179 bytes |
 | Installed packages without provider extras | 29 |
-| Installation using available cached dependencies | 0.241 s |
-| Fresh process startup to readiness | 0.167 s |
+| Installation using available cached dependencies | 0.228 s |
+| Fresh process startup to readiness | 0.219 s |
 
 The source lockfile has **57 packages**, including all optional provider SDKs and
 test dependencies, versus 131 before this change. PyTorch, Transformers,

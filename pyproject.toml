@@ -7,6 +7,7 @@ requires-python = ">=3.11"
 dependencies = [
     "asyncssh>=2.23.1",
     "hypercorn[h3]>=0.18,<0.19",
+    "aioquic>=1.7,<2",
     "httpx[http2]>=0.28,<1",
     "pydantic>=2.12,<3",
     "pyyaml>=6,<7",

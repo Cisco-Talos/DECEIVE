@@ -39,6 +39,8 @@ jobs:
         run: uv run --frozen --all-extras python scripts/verify_image_rebuild.py deceive:ci --report container-rebuild-arm64.json
       - name: Test active assessment Docker lifecycle
         run: uv run --frozen --all-extras python scripts/assessment_smoke.py deceive:ci
+      - name: Test managed deployment CLI
+        run: uv run --frozen --all-extras python scripts/managed_smoke.py deceive:ci --report managed-arm64.json
       - run: docker save deceive:ci -o deceive-arm64.tar
       - uses: actions/upload-artifact@v4
         with:
@@ -47,6 +49,7 @@ jobs:
             deceive-arm64.tar
             container-arm64.json
             container-rebuild-arm64.json
+            managed-arm64.json
   wheel:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 10

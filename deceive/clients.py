@@ -8,10 +8,10 @@ import ssl
 import httpx
 
 from aioquic.asyncio import QuicConnectionProtocol, connect
-from aioquic.h3.connection import H3_ALPN, H3Connection
-from aioquic.h3.events import DataReceived, HeadersReceived
+from aioquic.h3.connection import H3_ALPN, H3Connection, H3Stream, MessageError
+from aioquic.h3.events import DataReceived, H3Event, HeadersReceived
 from aioquic.quic.configuration import QuicConfiguration
-from aioquic.quic.events import ConnectionTerminated
+from aioquic.quic.events import ConnectionTerminated, QuicEvent, StreamReset
 
 
 @dataclass
@@ -22,10 +22,44 @@ class HTTPResult:
     version: str
 
 
+class H3ClientConnection(H3Connection):
+    """Keep HEAD representation metadata separate from response body framing."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._head_requests: set[int] = set()
+
+    def send_headers(self, stream_id: int, headers: list[tuple[bytes, bytes]],
+                     end_stream: bool = False) -> None:
+        super().send_headers(stream_id, headers, end_stream=end_stream)
+        if (b":method", b"HEAD") in headers:
+            self._head_requests.add(stream_id)
+
+    def _check_content_length(self, stream: H3Stream) -> None:
+        # aioquic's framing hook otherwise compares HEAD's metadata length to zero
+        # body bytes, closing a valid response. Retain headers and ordinary GET checks.
+        if stream.stream_id in self._head_requests:
+            if stream.content_length:
+                raise MessageError("HEAD response cannot contain content")
+            return
+        super()._check_content_length(stream)
+
+    def handle_event(self, event: QuicEvent) -> list[H3Event]:
+        events = super().handle_event(event)
+        for item in events:
+            if isinstance(item, (HeadersReceived, DataReceived)) and item.stream_ended:
+                self._head_requests.discard(item.stream_id)
+        if isinstance(event, StreamReset):
+            self._head_requests.discard(event.stream_id)
+        elif isinstance(event, ConnectionTerminated):
+            self._head_requests.clear()
+        return events
+
+
 class H3Client(QuicConnectionProtocol):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.http = H3Connection(self._quic)
+        self.http = H3ClientConnection(self._quic)
         self.pending: dict[int, asyncio.Future] = {}
         self.responses: dict[int, tuple[list, bytearray]] = {}
         self.cookies = httpx.Cookies()

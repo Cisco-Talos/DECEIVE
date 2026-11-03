@@ -177,6 +177,7 @@ SSH/DEPLOY/
 /logs/
 /results/
 /wheel-measurements.json
+/managed-measurements.json
 /container-measurements.json
 /container-*.json
 /deceive-*.tar

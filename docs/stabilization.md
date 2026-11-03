@@ -93,8 +93,8 @@ The final disposable lifecycle check passes two loops over real SSH and
 HTTP/1.1–3, reuses compatible containers after a profile-only update and removes
 its own containers, network and volumes.
 
-Remote ARM64 CI awaits approval to open the draft PR that triggers the existing
-workflows. The Python matrix invocation now explicitly selects its intended
+Remote ARM64 CI is deferred until the human is ready for a PR; no PR to `dev`
+is part of the current work. The Python matrix invocation explicitly selects its intended
 version. The live-provider SSH gate was completed with a configured Bedrock
 profile on 2026-11-03; see the addendum below. Mock SDK tests remain separate from
 that explicit live run.

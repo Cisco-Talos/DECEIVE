@@ -29,6 +29,7 @@ def test_built_image_checks_runtime_sources_without_rebuilding_for_client_files(
     candidate = {"server_id": "fingerprint", "files": {
         "deceive/runtime.py": "runtime", "deceive/vulnerabilities.py": "behavior",
         "deceive/clients.py": "client", "deceive/evaluate.py": "evaluation",
+        "deceive/managed.py": "management", "deceive/catalog.py": "catalog",
         "deceive/assessment/engine.py": "controller", "deceive/profiles/demo-http.yaml": "mounted",
         "tests/test_runtime.py": "test"}}
     spec = Spec(targets=[{"name": "web", "profiles": ["demo-http"]}])

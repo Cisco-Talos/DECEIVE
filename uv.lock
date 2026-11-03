@@ -355,6 +355,7 @@ name = "deceive"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "aioquic" },
     { name = "asyncssh" },
     { name = "httpx", extra = ["http2"] },
     { name = "hypercorn", extra = ["h3"] },
@@ -391,6 +392,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aioquic", specifier = ">=1.7,<2" },
     { name = "asyncssh", specifier = ">=2.23.1" },
     { name = "boto3", marker = "extra == 'bedrock'", specifier = ">=1.42,<2" },
     { name = "deceive", extras = ["openai", "ollama", "bedrock", "gemini"], marker = "extra == 'all-providers'" },

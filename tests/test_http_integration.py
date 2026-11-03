@@ -10,6 +10,40 @@ from deceive.config import load_profile
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("status", [200, 405])
+async def test_h3_head_preserves_length_metadata_and_connection(runtime_factory, status):
+    from deceive.models import Behavior
+
+    profile = load_profile("demo-http")
+    profile.behaviors = [Behavior(id="head", match={"path": "/payload"},
+                                  reply={"status": status, "body": "representation\n"})]
+    runtime = await runtime_factory("https", profile=profile, versions=["3"])
+    udp = next(e["port"] for e in next(iter(runtime.servers.values())).endpoints if e["transport"] == "udp")
+    async with h3_connect(udp) as client:
+        response = await client.request("HEAD", "/payload", timeout=3)
+        assert response.version == "3" and response.status == status and response.body == b""
+        assert (b"content-length", b"15") in response.headers
+        assert not client.http._head_requests
+        response = await client.request("GET", "/payload", timeout=3)
+        assert response.body == b"representation\n" and not client.terminated
+
+
+@pytest.mark.asyncio
+async def test_h3_fin_head_probe_keeps_response_metadata(runtime_factory):
+    from deceive.assessment.models import ProbeAction
+    from deceive.assessment.wire import wire_probe
+
+    runtime = await runtime_factory("https", versions=["3"])
+    udp = next(e["port"] for e in next(iter(runtime.servers.values())).endpoints if e["transport"] == "udp")
+    response = await wire_probe({"versions": ["3"], "ports": {"udp": {"host": udp}}},
+                               ProbeAction(operation="h3_fin", parameters={"method": "HEAD", "path": "/download"}))
+    assert response["facts"].get("status") == 200, response
+    assert "termination_code" not in response["facts"]
+    assert response["body_base64"] == ""
+    assert [b64decode(value) for key, value in response["headers"] if b64decode(key) == b"content-length"] == [b"4"]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("protocol,version", [("http", "1.1"), ("https", "1.1"), ("https", "2")])
 async def test_http_versions_binary_headers_and_multiplexing(runtime_factory, protocol, version):
     runtime = await runtime_factory(protocol, versions=[version])

@@ -91,6 +91,9 @@ async def verify(image: str) -> dict:
                             async with h3_connect(udp) as client:
                                 result = await client.request("GET", "/api/status")
                                 assert result.version == "3" and result.status == 200
+                                head = await client.request("HEAD", "/download")
+                                assert head.status == 200 and head.body == b""
+                                assert (b"content-length", b"4") in head.headers
                             key = docker("exec", name, "python", "-c",
                                 "import hashlib;print(hashlib.sha256(open('/data/certificates/main.key','rb').read()).hexdigest())")
                             assert measurements.setdefault("tls_key_sha256", key) == key

@@ -112,6 +112,24 @@ extras are `openai` (also Azure), `ollama`, `bedrock`, `gemini`, and `all-provid
 
 ## Deployment and profiles
 
+Discover and inspect profiles with `deceive profile list` and `deceive profile
+show ID`. Add `--directory DIR` for an authored catalog and `--json` for a
+versioned operation result. Named background deployments use the standard image:
+
+```sh
+uv run deceive deployment start demo --profile demo-http --image deceive:local
+uv run deceive deployment status demo --json
+uv run deceive deployment stop demo
+uv run deceive deployment start demo
+```
+
+Managed deployments publish on localhost by default, retain one data volume,
+and reuse stopped containers. They use a local image without pulling/building
+at startup. See [operator commands](docs/operations.md) for composition, port
+mapping, provider credentials, replacement and ownership-scoped removal.
+The repository [deceive umbrella skill](skills/deceive/SKILL.md) connects discovery,
+running, validation, profile creation and active assessment through chat.
+
 For several listeners or custom settings, copy `examples/deployment.yaml`, edit
 it, and run:
 
@@ -226,6 +244,9 @@ merging, and deployment remain separate actions.
 Container checks compare installed package files with the candidate source and
 exercise a source-only rebuild with warm Docker/uv caches. The project wheel is
 explicitly reinstalled during image builds; dependency layers remain cached.
+HTTP/3 acceptance clients preserve HEAD response metadata without expecting body
+bytes; source and installed-artifact checks cover that behavior and ordinary
+content-length validation.
 
 ## License
 
