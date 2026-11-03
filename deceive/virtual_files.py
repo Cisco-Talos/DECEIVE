@@ -1,0 +1,182 @@
+"""Small, bounded virtual file commands. Never opens paths or executes commands."""
+from __future__ import annotations
+
+import posixpath
+import shlex
+
+from deceive.interaction import Interaction, Response, Session
+from deceive.models import Behavior, Profile
+
+MAX_NODES = 128
+MAX_BYTES = 65536
+
+
+def enabled(profile: Profile) -> bool:
+    return any(b.kind == 'virtual_files' for b in profile.behaviors)
+
+
+def view(profile: Profile, session: Session) -> tuple[dict[str, bytes], set[str]]:
+    files = {p: text.encode() for p, text in profile.files.items() if p not in session.removed_files}
+    files.update(session.virtual_files)
+    home = '/root' if session.username == 'root' else '/home/' + session.username
+    directories = {'/', '/home', home} | session.virtual_directories
+    for behavior in profile.behaviors:
+        if behavior.kind == 'virtual_files':
+            directories.update(behavior.options.get('directories', []))
+    for path in list(files) + list(directories):
+        while path not in {'/', '//', ''}:
+            path = posixpath.dirname(path)
+            directories.add(path)
+    return files, directories
+
+
+def validate(spec: Behavior, profile: Profile | None) -> None:
+    if profile is not None and profile.protocol != 'ssh':
+        raise ValueError('Virtual files require SSH')
+    if set(spec.options) - {'directories'}:
+        raise ValueError('Unknown virtual_files option')
+    directories = spec.options.get('directories', [])
+    if not isinstance(directories, list) or len(directories) > MAX_NODES or any(
+        not isinstance(p, str) or not p.startswith('/') or '\x00' in p or len(p.encode()) > 4096
+        or p.startswith('//') or posixpath.normpath(p) != p for p in directories
+    ):
+        raise ValueError('Virtual directories must be bounded, normalized absolute paths')
+    if profile is not None and any(p.startswith('//') or '\x00' in p or
+        posixpath.normpath(p) != p or len(p.encode()) > 4096 for p in profile.files):
+        raise ValueError('Virtual file names must be bounded, normalized absolute paths')
+
+
+def respond(profile: Profile, spec: Behavior, interaction: Interaction,
+            session: Session) -> Response | None:
+    if interaction.protocol != 'ssh':
+        return None
+    try:
+        words = shlex.split(interaction.command)
+    except ValueError:
+        return Response(stderr=b'bash: syntax error\n', exit_status=2)
+    if not words or words[0] not in {'cat', 'ls', 'cd', 'touch', 'mkdir', 'rm', 'echo'}:
+        return None
+    files, directories = view(profile, session)
+    home = '/root' if session.username == 'root' else '/home/' + session.username
+    cwd = session.state.get('cwd', home)
+
+    def path(name: str) -> str:
+        if '\x00' in name or len(name.encode()) > 4096:
+            raise ValueError('Virtual path exceeds supported bounds')
+        name = home + name[1:] if name == '~' or name.startswith('~/') else name
+        return '/' + posixpath.normpath(posixpath.join(cwd, name)).lstrip('/')
+
+    def error(command: str, name: str, reason: str, status: int = 1) -> Response:
+        return Response(stderr=f'{command}: {name}: {reason}\n'.encode(), exit_status=status)
+
+    def capacity(new_files: dict[str, bytes], new_dirs: set[str], removed: set[str]) -> bool:
+        return (len(new_files) + len(new_dirs) + len(removed) <= MAX_NODES
+                and sum(len(v) for v in new_files.values()) <= MAX_BYTES)
+
+    command, args = words[0], words[1:]
+    # Complex shell grammar stays with generative fallback; this parser never evaluates it.
+    if any(token in {';', '&&', '||', '|', '<', '2>', '>&2'} for token in args):
+        return None
+    if command == 'cat' and args and all(not a.startswith('-') for a in args):
+        output, diagnostics = bytearray(), bytearray()
+        for name in args:
+            key = path(name)
+            if key in files:
+                output.extend(files[key])
+            else:
+                reason = 'Is a directory' if key in directories else 'No such file or directory'
+                diagnostics.extend(error('cat', name, reason).stderr)
+        return Response(body=bytes(output), stderr=bytes(diagnostics), exit_status=int(bool(diagnostics)))
+    if command == 'cd' and len(args) <= 1:
+        name = args[0] if args else home
+        key = path(name)
+        if key not in directories:
+            return error('bash: cd', name, 'Not a directory' if key in files else 'No such file or directory')
+        return Response(transition={'cwd': key})
+    if command == 'ls':
+        flags = ''.join(a[1:] for a in args if a.startswith('-'))
+        names = [a for a in args if not a.startswith('-')]
+        if set(flags) - set('laA1dh') or len(names) > 1:
+            return None
+        name = names[0] if names else '.'
+        key = path(name)
+        if key not in files and key not in directories:
+            return error('ls: cannot access', "'" + name + "'", 'No such file or directory', 2)
+        listing = []
+        if key in files or 'd' in flags:
+            listing.append((name, key))
+        else:
+            children = sorted({p for p in files.keys() | directories if p != key and posixpath.dirname(p) == key})
+            listing = [(posixpath.basename(p), p) for p in children
+                       if 'a' in flags or 'A' in flags or not posixpath.basename(p).startswith('.')]
+            if 'a' in flags:
+                listing = [('.', key), ('..', posixpath.dirname(key))] + listing
+        rows = []
+        for display, item in listing:
+            if 'l' in flags:
+                directory = item in directories
+                size = 4096 if directory else len(files[item])
+                private = item in session.virtual_files or item in session.virtual_directories
+                owner = session.state.get('user', session.username) if private or item.startswith(home + '/') else 'root'
+                if item == home:
+                    owner = session.username
+                mode = 'drwxr-xr-x' if directory else '-rw-r--r--'
+                if item in {'/tmp', '/var/tmp'}:
+                    mode = 'drwxrwxrwt'
+                links = 2 + sum(posixpath.dirname(p) == item and p != item for p in directories) if directory else 1
+                rows.append(f'{mode} {links} {owner} {owner} {size} Jan 15 09:00 {display}')
+            else:
+                rows.append(display)
+        if 'l' in flags and key in directories and 'd' not in flags:
+            blocks = sum(((4096 if item in directories else len(files[item])) + 4095) // 4096 * 4
+                         for _, item in listing)
+            rows.insert(0, f'total {blocks}')
+        return Response(body=(''.join(row + '\n' for row in rows)).encode())
+    if command in {'touch', 'mkdir', 'rm'} and args and all(not a.startswith('-') for a in args):
+        updates, dirs, removed = dict(session.virtual_files), set(session.virtual_directories), set(session.removed_files)
+        for name in args:
+            key = path(name)
+            if command == 'rm':
+                if key not in files:
+                    return error('rm: cannot remove', "'" + name + "'", 'Is a directory' if key in directories else 'No such file or directory')
+                updates.pop(key, None)
+                removed.add(key)
+            else:
+                if posixpath.dirname(key) not in directories | dirs:
+                    return error(command, name, 'No such file or directory')
+                if command == 'mkdir':
+                    if key in files or key in directories | dirs:
+                        return error(command, name, 'File exists')
+                    dirs.add(key)
+                elif key not in directories:
+                    updates[key] = files.get(key, b'')
+                    removed.discard(key)
+        if not capacity(updates, dirs, removed):
+            return error(command, args[0], 'No space left on device')
+        session.virtual_files, session.virtual_directories, session.removed_files = updates, dirs, removed
+        return Response()
+    if command == 'echo' and len(args) >= 2 and args[-2] in {'>', '>>'}:
+        # Only literal echo redirection is supported. Expansions are not evaluated here.
+        if any('$' in a or '`' in a or a in {'>', '>>'} for a in args[:-2]):
+            return None
+        key = path(args[-1])
+        if key in directories:
+            return error('bash', args[-1], 'Is a directory')
+        if posixpath.dirname(key) not in directories:
+            return error('bash', args[-1], 'No such file or directory')
+        values = args[:-2]
+        newline = not (values and values[0] == '-n')
+        if not newline:
+            values = values[1:]
+        if values and values[0].startswith('-'):
+            return None
+        content = (' '.join(values) + ('\n' if newline else '')).encode()
+        if args[-2] == '>>':
+            content = files.get(key, b'') + content
+        updates = session.virtual_files | {key: content}
+        removed = session.removed_files - {key}
+        if not capacity(updates, session.virtual_directories, removed):
+            return error('bash', args[-1], 'No space left on device')
+        session.virtual_files, session.removed_files = updates, removed
+        return Response()
+    return None

@@ -55,6 +55,17 @@ mappings. This dedicated bridge is not an outbound-network sandbox. Model-backed
 target `provider`, and explicit `docker.provider_network: true`; no fake runtime
 provider is silently substituted for realism assessment.
 
+Bedrock targets reuse deployment `aws_profile`, `region` and `model` settings.
+Set `docker.aws_dir` to an explicit AWS shared-config/credentials directory
+(relative paths belong to the assessment YAML). The harness mounts it read-only
+and sets the container's shared-config paths; it does not copy secrets into the
+candidate or image. Files must be readable by the container's non-root user.
+Use a private parent directory for any temporary credential staging and remove it
+after final shutdown. Named AWS profiles require this explicit mount. Without a
+named profile, standard AWS credential environment variables can be forwarded by
+name; values are not written into the specification or reports. Provider network
+access still requires `docker.provider_network: true`.
+
 Built target images are checked against the installed runtime source fingerprints
 before deployment; a newly tagged image with a stale cached wheel is rejected.
 The standard-image check additionally verifies packaged clients and assets.

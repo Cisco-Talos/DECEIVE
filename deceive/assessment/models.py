@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, model_validator
@@ -35,6 +36,7 @@ class DockerSettings(Model):
     build: bool = True
     retain: bool = True
     provider_network: bool = False
+    aws_dir: Path | None = None
 
 
 class Target(Model):

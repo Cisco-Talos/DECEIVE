@@ -20,6 +20,7 @@ from deceive.models import Deployment, Listener, Profile, Reply
 from deceive.providers import Message, Provider, ProviderError, SDKProvider
 from deceive.telemetry import Telemetry, encode
 from deceive.ssh_response import parse_reply, transcript_reply
+from deceive import virtual_files
 
 
 SYSTEM_PROMPT = """Simulate only the current input. Never invent the user's next input.
@@ -240,7 +241,14 @@ class Runtime:
             "headers": [(k.decode("latin-1"), v.decode("latin-1")) for k, v in interaction.headers],
             "body_base64": encode(interaction.body),
         })
-        facts = json.dumps({"identity": profile.identity.model_dump(), "files": profile.files,
+        files = profile.files
+        directories = []
+        if virtual_files.enabled(profile):
+            current_files, current_dirs = virtual_files.view(profile, session)
+            files = {path: body.decode("utf-8", "replace") for path, body in current_files.items()}
+            directories = sorted(current_dirs)
+        facts = json.dumps({"identity": profile.identity.model_dump(), "files": files,
+                            "directories": directories,
                             "user": session.username, "state": session.state,
                             "last_exit_status": session.last_exit_status,
                             "interactive": interaction.interactive})
@@ -323,6 +331,9 @@ class Runtime:
                 session.history.clear()
                 session.state.clear()
                 session.last_exit_status = 0
+                session.virtual_files.clear()
+                session.virtual_directories.clear()
+                session.removed_files.clear()
                 self.sessions.pop(session.id, None)
 
     async def _maintain(self) -> None:

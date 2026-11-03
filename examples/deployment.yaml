@@ -48,7 +48,7 @@ listeners:
 #   - name: ssh
 #     protocol: ssh
 #     profile: linux-ssh
-#     # linux-ssh v2 uses structured stdout/stderr/exit status; custom profiles
+#     # linux-ssh v3 uses structured stdout/stderr/exit status and private virtual files; custom profiles
 #     # select ssh_response_format: json in their own YAML (legacy default: text).
 #     port: 8022
 #     provider: default

@@ -54,6 +54,9 @@ class Session:
     lock: object = None
     expire: Callable[[], None] | None = None
     last_exit_status: int = 0
+    virtual_files: dict[str, bytes] = field(default_factory=dict)
+    virtual_directories: set[str] = field(default_factory=set)
+    removed_files: set[str] = field(default_factory=set)
 
 
 API_VERSION = 1

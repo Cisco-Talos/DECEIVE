@@ -9,7 +9,7 @@ persistent deployment was performed.
 ## Tests and acceptance
 
 - Original SSH baseline: 26 tests passed. Assessment baseline: **105 tests passed**.
-- Current deterministic suite: **202 tests passed** in 52.86 seconds on Darwin arm64,
+- Current deterministic suite: **209 tests passed** on Darwin arm64,
   Python 3.11.15. This includes actual SSH, HTTP/1.1, HTTP/2 multiplexing, HTTP/3,
   binary content, authentication modes, isolated state, key reuse, migration,
   resource/deadline handling, startup rollback, observer failures, and offline
@@ -274,6 +274,68 @@ shell. Generative state remains bounded history; PTY line discipline, arbitrary
 stdout/stderr interleaving and output indistinguishable from the shell prompt
 remain documented limitations. No new runtime dependencies were introduced.
 
+## Two active Bedrock SSH loops — 2026-11-03
+
+The human requested two fixed assessment loops on Bedrock-backed `linux-ssh`.
+The repository skill coordinated four fresh native reviewer contexts per loop,
+using neutral target handles and the frozen `evidence-v2` rubric. This was
+independent active review, not enforced blinding. Each reviewer was limited to
+20 probe actions, 20 command inputs and ten minutes. No calibration target was
+included in this selected-profile run.
+
+| Loop | Profile version | Median realism | Correctness | Telemetry |
+| --- | --- | ---: | --- | --- |
+| 1 | linux-ssh 2 | 70 | Passed | Passed |
+| 2 | linux-ssh 3 | 90 | Passed | Passed |
+
+Loop 1 produced three verified P2 findings: missing-file exec diagnostics went
+to stdout, generated long listings disagreed with the README's actual byte count,
+and touch/list/cat disagreed about a created file within one session. The
+consistency reviewer found no tell in narrower identity/cwd coverage; the
+controller preserved that rating while verifying the other reviewers' concrete
+evidence. The unchanged five-case acceptance suite passed both externally and
+inside each candidate image; it did not cover these new realism regressions.
+
+Four initially failing regressions preceded the repair. The opt-in
+`virtual_files` behavior now uses a bounded private overlay for basic file
+commands, derives listing names/sizes from current content and sends diagnostics
+to stderr. The model receives the same current virtual view. Linux profile
+version 3 enables it; legacy/reference profiles remain unchanged. Tests cover
+cross-connection isolation, normalization, baseline overwrites, cleanup, host
+path isolation, aggregate bounds and atomic capacity failure. Full shell grammar,
+permission enforcement and filesystem timestamp fidelity remain excluded.
+
+Controller replays verified all three repairs on the second candidate. All four
+fresh reviewers then reported no material in-scope tell (realism 90), and the
+original findings were resolved with current-candidate interaction evidence.
+The run ended `count_complete`, with final `qualified: false`: only one passing
+panel assessed the repaired candidate. Another unchanged passing assessment is
+required by the default confirmation policy. These scores describe bounded
+observations, not measured fidelity percentages.
+
+This run also exposed missing assessment support for named AWS credential
+mounts. Two failing tests preceded explicit `docker.aws_dir` support, relative
+path resolution and read-only shared-config mounts. Profile/region/model remain
+deployment configuration. Only the selected profile was staged temporarily for
+this local run; its private credential copy was removed after shutdown. Resuming
+the retained container requires fresh credential staging. Credentials are not in
+candidate snapshots, images or tracked files.
+
+The final **209-test** deterministic suite, outside-checkout wheel and native
+ARM64 image checks pass. Installed artifacts exercise private file effects with
+fake providers, real SSH streams/status and all 20 frozen CVE cases, plus actual
+HTTP/2–3 and composition. A separate two-loop deterministic Docker smoke passes
+after live assessment finalization; the first attempt correctly refused competing
+repository ownership. Its fake reports are not part of the live panel scores.
+
+Runtime telemetry plus internal acceptance reports record **49 Bedrock generation
+calls**, 40,848 input tokens and 2,085 output tokens across the two loops. Analysis
+was disabled. Native reviewer usage/cost was unavailable; no dollar estimate is
+claimed. The final SVG was parsed and visually inspected. Evidence, eight original
+reports, decisions, checkpoints, results and dashboard remain under ignored
+`results/ssh-assessment-20261103/`. The owned target is stopped and retained; no
+assessment listener remains running. No commits or pushes were made by the loop.
+
 ## Container measurements
 
 Docker Engine 29.9.2 runs Linux/aarch64 on this workstation. ARM64 is the only
@@ -285,13 +347,14 @@ performance promises.
 | --- | ---: | ---: | ---: |
 | `deceive:interface-arm64` (native) | 384,095,894 | 1.579 s | 50 |
 | `deceive:ssh-fidelity-arm64` (native) | 384,143,198 | 1.568 s | 50 |
+| Assessed candidate `889117e472e3` (native) | 384,188,468 | 1.956 s | 50 |
 
 Ready time measures container creation/start through the local health probe with
 an existing image and a new data volume. It excludes image pulling. Stored image
 size is measured after first unpacking, so lazy-unpacked foreign images are not
 incorrectly compared using compressed content alone; it is not a download size.
-The latest standard image verifies installed source/assets against 50 expected
-files (49 before the SSH reply module). A separate warm-cache rebuild changes only copied Python source while
+The latest image verifies installed source/assets against 51 expected files
+(49 before SSH reply/private-file modules). A separate warm-cache rebuild changes only copied Python source while
 retaining identical build metadata, then verifies the changed installed bytes.
 
 Container smoke tests removed their disposable containers and volumes. Built
@@ -303,10 +366,10 @@ triggered or published as part of this work.
 
 | Measurement | Result |
 | --- | ---: |
-| Wheel, excluding dependencies | 113,901 bytes |
+| Wheel, excluding dependencies | 117,856 bytes |
 | Installed packages without provider extras | 29 |
-| Installation using available cached dependencies | 0.063 s |
-| Fresh process startup to readiness | 0.223 s |
+| Installation using available cached dependencies | 0.282 s |
+| Fresh process startup to readiness | 0.273 s |
 
 The source lockfile has **57 packages**, including all optional provider SDKs and
 test dependencies, versus 131 before this change. PyTorch, Transformers,

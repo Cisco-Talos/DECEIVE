@@ -5,6 +5,7 @@ import posixpath
 import regex
 import shlex
 
+from deceive import virtual_files
 from deceive.interaction import Interaction, Response, Session
 from deceive.models import Behavior, Profile, Reply
 from deceive.vulnerabilities import CVE_HANDLERS, validate_cve
@@ -115,7 +116,8 @@ def identity(profile: Profile, spec: Behavior, interaction: Interaction,
     return Response(body=output.encode(), behavior=spec.id, transition=transition)
 
 
-BUILTIN_BEHAVIORS = {"rule": rule, "identity": identity, **CVE_HANDLERS}
+BUILTIN_BEHAVIORS = {"rule": rule, "identity": identity,
+                     "virtual_files": virtual_files.respond, **CVE_HANDLERS}
 
 
 def validate_behavior(spec: Behavior, profile: Profile | None = None) -> None:
@@ -129,7 +131,9 @@ def validate_behavior(spec: Behavior, profile: Profile | None = None) -> None:
         raise ValueError("State transitions exceed supported bounds")
     if set(spec.transition) & {"hostname", "os", "kernel", "architecture"}:
         raise ValueError("State transitions cannot change deployment identity")
-    if spec.kind in CVE_HANDLERS:
+    if spec.kind == "virtual_files":
+        virtual_files.validate(spec, profile)
+    elif spec.kind in CVE_HANDLERS:
         validate_cve(spec, profile)
     elif spec.kind in BUILTIN_BEHAVIORS and spec.options:
         raise ValueError(f"Behavior {spec.kind} does not accept options")

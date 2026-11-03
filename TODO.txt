@@ -9,6 +9,7 @@
 * HTTP/2 method case preservation/virtual proxy semantics and pre-validation HTTP/3 FIN observation, guided by capability tests before new CVE behavior (docs/protocol-capability-findings.md).
 
 Completed on codex/deception-profiles:
+* Opt-in bounded private virtual-file behavior unifies basic reads/listings/mutations and model facts; linux-ssh v3 repairs active-review stream/size/state findings. Assessment Docker accepts explicit read-only AWS profile mounts.
 * Structured SSH model replies preserve stdout/stderr bytes and exit status; shared assessment/evaluation clients retain binary/unterminated output. Private status, telemetry and legacy compatibility have deterministic and bounded Bedrock checks.
 * Fresh umbrella-skill operator acceptance: composed deployment identity reuse, tests-first fictional H2/H3 profile, one bounded four-reviewer assessment and final dashboard; verified client-only HEAD metadata repair with original panel evidence preserved.
 * Unified CLI profile catalog/show, owned Docker deployment start/stop/list/status/remove, versioned operation results and repository-local deceive umbrella skill; local wheel/container/lifecycle checks pass.

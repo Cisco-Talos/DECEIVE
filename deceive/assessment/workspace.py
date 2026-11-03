@@ -56,6 +56,8 @@ def git(root: Path, *args: str) -> str:
 def resolve_spec(path: Path) -> Spec:
     spec = Spec.model_validate(read_yaml(path))
     base = path.resolve().parent
+    if spec.docker.aws_dir is not None:
+        spec.docker.aws_dir = relative_path(base, spec.docker.aws_dir)
     for target in spec.targets:
         if target.deployment:
             target.deployment = str(relative_path(base, target.deployment))

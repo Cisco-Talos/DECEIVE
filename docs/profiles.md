@@ -148,7 +148,7 @@ Text output is preserved as returned and has exit status 0; the legacy standalon
 `YYY-END-OF-SESSION-YYY` sentinel still ends the session. Text that happens to look
 like JSON remains literal output. INI migration explicitly retains this mode.
 
-The bundled `linux-ssh` version 2 selects `ssh_response_format: json` and declares
+The bundled `linux-ssh` version 3 selects `ssh_response_format: json` and declares
 `ssh.structured_responses`. The model returns one object, for example:
 
 ```json
@@ -176,6 +176,28 @@ streams is not represented. The adapter does not append newlines or emulate PTY
 line discipline. Unsupported/malformed replies end the session with a sanitized
 failure. Existing deterministic CVE response wording and stream placement are
 unchanged.
+
+## Private virtual file commands
+
+The opt-in `virtual_files` behavior runs before `identity` in `linux-ssh` version
+3. Its only option, `directories`, lists normalized absolute virtual directories,
+such as `/tmp` and `/var/tmp`. Baseline files still come from `profile.files`.
+Reads, listings, current directory and supported writes share one connection's
+private view; another connection starts from the unchanged baseline. Generative
+fallback receives that current view too.
+
+Supported forms are basic `cat` operands, `ls` with a single optional path and
+`-l`, `-a`, `-A`, `-1`, `-d`, `-h` flag combinations, `cd`, unflagged `touch`,
+`mkdir`, `rm`, and literal `echo`/`echo -n` with spaced `>` or `>>` redirection.
+There is no shell expansion, pipeline, symlink or real path access. Other forms
+use the profile fallback. Listing names and byte sizes come from virtual content;
+ownership/modes and dates are display fixtures, not full permission or timestamp
+emulation. Missing-file/directory diagnostics use stderr.
+
+Each session permits at most 128 overlay/deletion/directory entries and 64 KiB of
+overlay content. Capacity failures leave the previous view intact. End-of-session
+cleanup discards the view. This behavior is not enabled on the reference CVE
+profiles, whose agreed wording and stream placement remain unchanged.
 
 ## Reference vulnerability behaviors
 

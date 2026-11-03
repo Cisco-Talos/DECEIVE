@@ -1,12 +1,12 @@
 schema_version: 1
 id: linux-ssh
-version: "2"
+version: "3"
 description: A Linux build host with stable identity, virtual baseline files and LLM fallback.
 protocol: ssh
 requirements:
   protocol: ssh
   preferred_port: 8022
-  capabilities: [ssh.commands, ssh.structured_responses, 'behavior:identity']
+  capabilities: [ssh.commands, ssh.structured_responses, 'behavior:identity', 'behavior:virtual_files']
 identity:
   hostname: build-node-03
   os: Ubuntu 22.04.5 LTS
@@ -22,6 +22,10 @@ files:
   /etc/passwd: "root:x:0:0:root:/root:/bin/bash\nguest:x:1000:1000:Build Guest:/home/guest:/bin/bash\n"
   /home/guest/README.txt: "Build artifacts are available through the portal.\n"
 behaviors:
+  - id: virtual-files
+    kind: virtual_files
+    options:
+      directories: [/tmp, /var/tmp]
   - id: identity
     kind: identity
 fallback: llm
@@ -32,6 +36,12 @@ prompt: |
   this session. Answer only the current command and never invent a following
   command. Use the runtime-requested response format and preserve output bytes,
   including trailing newlines. The server renders the shell prompt and banner.
+  The supplied file/directory view is authoritative, including sizes derived from
+  UTF-8 file bytes. Do not invent extra files in listings. Unsupported mutations
+  must not claim lasting effects absent from this view. Simple literal file
+  commands are handled by the runtime; shell expansions and full grammar are not
+  implemented. Answer unsupported forms conservatively rather than inventing effects.
 limitations:
-  - Only declared baseline files and supported identity commands are deterministic.
+  - Declared identity and basic virtual-file commands are deterministic; unsupported command forms use generative fallback.
   - Other command output is generative; no command executes on a real system.
+  - Simple cat/ls/cd/touch/mkdir/rm and literal echo redirection use bounded private virtual files; full shell grammar, permissions and file timestamps are not emulated.

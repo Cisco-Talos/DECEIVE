@@ -114,6 +114,22 @@ def reserve(transport: str) -> tuple[socket.socket, int]:
     return sock, sock.getsockname()[1]
 
 
+def aws_credentials(providers: dict, directory: Path | None) -> tuple[list[tuple[str, str]], dict[str, str]]:
+    bedrock = [provider for provider in providers.values() if provider.kind == "bedrock"]
+    if not bedrock:
+        return [], {}
+    if directory is None:
+        if any(provider.aws_profile for provider in bedrock):
+            raise ValueError("A named AWS profile requires docker.aws_dir for assessment")
+        return [], {}
+    if not directory.is_dir() or "," in str(directory):
+        raise ValueError("AWS credential directory is missing or has an unsupported path")
+    return [(str(directory), "/material/aws")], {
+        "AWS_SHARED_CREDENTIALS_FILE": "/material/aws/credentials",
+        "AWS_CONFIG_FILE": "/material/aws/config",
+    }
+
+
 async def deploy(docker: Docker, run: Path, state: dict, spec: Spec, target: Target,
                  handle: str, image: str, loop_dir: Path) -> dict:
     config = target_deployment(spec, target)
@@ -215,11 +231,17 @@ async def deploy(docker: Docker, run: Path, state: dict, spec: Spec, target: Tar
             envs.add(provider.api_key_env)
         else:
             envs.update({"openai": ["OPENAI_API_KEY"], "azure": ["AZURE_OPENAI_API_KEY"],
-                         "gemini": ["GOOGLE_API_KEY", "GEMINI_API_KEY"]}.get(provider.kind, []))
+                         "gemini": ["GOOGLE_API_KEY", "GEMINI_API_KEY"],
+                         "bedrock": ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN",
+                                     "AWS_DEFAULT_REGION", "AWS_REGION", "AWS_PROFILE", "AWS_DEFAULT_PROFILE"],
+                         }.get(provider.kind, []))
+    aws_mounts, aws_env = aws_credentials(config.providers, spec.docker.aws_dir)
+    secrets.extend(aws_mounts)
     if config.providers and not spec.docker.provider_network:
         raise ValueError("Model-backed targets require explicit docker.provider_network: true")
     layout = fingerprint({"image": image, "endpoints": endpoints, "secrets": secrets,
-                          "envs": sorted(envs), "provider_network": spec.docker.provider_network})
+                          "envs": sorted(envs), "aws_env": aws_env,
+                          "provider_network": spec.docker.provider_network})
     name = f'{state["run_id"]}-{handle}'
     volume, network = name + "-data", state["run_id"] + "-net"
     if not state.get("network"):
@@ -270,6 +292,8 @@ async def deploy(docker: Docker, run: Path, state: dict, spec: Spec, target: Tar
             for variable in sorted(envs):
                 if os.environ.get(variable):
                     options += ["-e", variable]
+            for variable, value in aws_env.items():
+                options += ["-e", variable + "=" + value]
             docker.call(*options, image, "serve", "--config", "/stage/deployment.yaml")
         for sock in reservations:
             sock.close()

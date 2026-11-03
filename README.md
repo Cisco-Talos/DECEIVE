@@ -65,12 +65,15 @@ to enable LLM intent summaries. Without it, summaries use judgement `UNKNOWN`.
 A profile using generative fallback must have a provider; deterministic profiles
 can run entirely without one.
 
-The bundled `linux-ssh` version 2 requests structured model replies so stdout,
+The bundled `linux-ssh` version 3 requests structured model replies so stdout,
 stderr and command exit status remain separate. Output bytes retain their trailing
 newlines, including commands that emit none. Interactive terminals display both
 streams before the server-owned prompt; `echo $?` and bare `exit` use the previous
 command status. Existing custom and migrated profiles keep text replies unless
 they select `ssh_response_format: json`. See the [SSH reply contract](docs/profiles.md#ssh-model-replies).
+Its opt-in `virtual_files` behavior uses one bounded private view for basic file
+reads, listings and supported mutations, so generated commands receive the same
+current file facts. It does not implement a complete shell or filesystem.
 
 Bedrock uses the same deployment YAML provider configuration. Install the native
 extra with `uv sync --extra bedrock`, then select the provider from your SSH
