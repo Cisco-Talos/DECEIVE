@@ -1,5 +1,12 @@
 schema_version: 1
+# For version 2 organization/instance bindings, see contracts-deployment.yaml
+# and ../docs/behavior-contracts.md.
 # For two model-free reference CVEs, see reference-deployment.yaml.
+# For the model-free SSH auth-bypass profile, select sshhole-2026-123158 on its
+# own SSH listener (or use: deceive serve --profile sshhole-2026-123158).
+# Its profile-scoped ssh_auth policy overrides listener accounts only for that profile.
+# Research-backed realism assessment is a separate workflow; see assessment-research.yaml.
+# Workbench profile v2 has explicit read-only HEAD routes; POST commands stay explicit.
 # For requirement-driven composition, see composition-deployment.yaml.
 # Validate the exact selection before serving:
 # deceive config validate --config deployment.yaml --deception ANOTHER_PROFILE
@@ -13,6 +20,8 @@ schema_version: 1
 data_dir: ./data
 sensor_name: deceive
 # stdout JSONL is the default. Uncomment to write a file relative to this YAML.
+# Rejected SSH model attempts and their delivered final failure share a request_id.
+# Linux virtual commands include bounded literal-only printf and private bare history.
 # log_file: ./logs/deceive.log
 # Instead of explicit listeners, profiles can declare their own requirements:
 # deceptions:

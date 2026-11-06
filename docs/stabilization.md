@@ -1,5 +1,9 @@
 # Stabilization before the unified interface
 
+The v2 scores recorded below are historical observations, not evidence-v3 realism
+signoff. New qualification requires the [current assessment workflow](assessment.md),
+including frozen coverage and sensitivity checks. Original reports remain unchanged.
+
 This pass exercises the existing deceptions and development workflows before
 adding the common operator interface. ARM64 remains the only build/test target.
 No new CVE or production deployment is introduced.

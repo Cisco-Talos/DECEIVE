@@ -1,0 +1,23 @@
+# Historical v2 reference setup; diagnostic only. Use evidence-v3 goals/controls for realism signoff.
+schema_version: 1
+review_rubric: evidence-v2
+policy: {mode: fixed, max_loops: 2, minimum_realism: 85, confirmations: 2}
+limits: {per_role_target: 30, reviewer_seconds: 600, concurrency: 4}
+docker: {build: false, image: 'deceive:contracts-arm64', retain: true}
+targets:
+  - name: workbench-linux
+    profiles: [workbench-http-linux]
+    claims: Fictional Workbench 1.0 administration API on Linux. GET / and /api/demo/status, GET /api/demo/jobs/JOB_ID, POST /api/demo/command with JSON command. Bounded literal Linux commands plus workbench status and workbench echo NAME. Web processes reset cwd/environment/status; files persist only in private cookie sessions. HTTPS 1.1, 2 and 3. No real CVE or complete shell claim.
+  - name: workbench-cmd
+    profiles: [workbench-http-cmd]
+    claims: Fictional Workbench 1.0 administration API on Windows cmd.exe. GET / and /api/demo/status, GET /api/demo/jobs/JOB_ID, POST /api/demo/command with JSON command. Bounded cmd commands plus workbench status and workbench echo NAME. C:\Temp is writable virtually. Web processes reset cwd/environment/status; files persist only in private cookie sessions. HTTPS 1.1, 2 and 3. Formatting is simplified; no complete Windows interpreter or real CVE claim.
+  - name: workbench-ps51
+    profiles: [workbench-http-ps51]
+    claims: Fictional Workbench 1.0 administration API using bounded Windows PowerShell 5.1. GET / and /api/demo/status, GET /api/demo/jobs/JOB_ID, POST /api/demo/command with JSON command. Literal file commands and workbench status/echo NAME; C:\Temp is virtual. Web process state resets; files persist only in private cookie sessions. HTTPS 1.1, 2 and 3. Simplified formatting; no scripts, pipelines, full PowerShell or real CVE claim.
+  - name: workbench-ps7
+    profiles: [workbench-http-ps7]
+    claims: Fictional Workbench 1.0 administration API using bounded Windows PowerShell 7. GET / and /api/demo/status, GET /api/demo/jobs/JOB_ID, POST /api/demo/command with JSON command. Literal file commands and workbench status/echo NAME; C:\Temp is virtual. Web process state resets; files persist only in private cookie sessions. HTTPS 1.1, 2 and 3. Simplified formatting; no scripts, pipelines, full PowerShell or real CVE claim.
+  - name: acme-group
+    deployment: contracts-deployment.yaml
+    suite: contracts-bound-acceptance.yaml
+    claims: Two independent fictional Workbench 1.0 HTTPS services with an Acme Research organization binding. Paths use /api/acme/status, /api/acme/jobs/JOB_ID and POST /api/acme/command with JSON command. One Linux and one Windows PowerShell 7 service, each with its own identity and cookie-private virtual files. All three HTTP versions. No shared mutable state across services; simplified command formatting, no complete shell or real CVE claim.

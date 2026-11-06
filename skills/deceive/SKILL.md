@@ -21,6 +21,11 @@ realism, correctness and telemetry remain separate values in `data`.
 
 ## Choose the operation
 
+Profile creation/refinement routes to deceive-author, including its research
+dossier and default active assessment handoff. The separate deceive-assess skill
+owns that review/repair loop and standalone realism requests; it consumes frozen
+independent research as well as functional contracts.
+
 | User intent | Interface |
 | --- | --- |
 | Available deceptions or CVEs | `profile list`, optionally `--vulnerabilities`, `--protocol`, `--directory DIR` |

@@ -29,15 +29,15 @@ def write_json(path: Path, value: dict, *, mode: int = 0o600) -> None:
     temporary.replace(path)
 
 
-def snapshot_profile(reference: str, destination: Path, seen: tuple[str, ...] = ()) -> str:
-    profile = load_profile(reference)
+def snapshot_profile(reference: str, destination: Path, seen: tuple[str, ...] = (), *, profile=None) -> str:
+    profile = profile if profile is not None else load_profile(reference)
     if reference in seen or len(seen) >= 10:
         raise ValueError("Cyclic/deep profile dependencies")
     # Assets are already embedded by load_profile; preserve omitted inherited defaults.
     raw = profile.model_dump(mode="json", exclude_unset=True)
     if profile.requirements and profile.requirements.base_profile:
         raw["requirements"]["base_profile"] = snapshot_profile(
-            profile.requirements.base_profile, destination, seen + (reference,))
+            profile.requirements.base_profile, destination, seen + (reference,), profile=profile._bound_base)
     name = "profile-" + fingerprint(raw)[:20] + ".json"
     write_json(destination / name, raw, mode=0o644)
     return "/config/" + name
@@ -185,6 +185,10 @@ class DeploymentManager:
         with self.locked(name) as directory:
             if (directory / "record.json").exists():
                 record = self.record(name)
+                if config is not None and record.get('plan_fingerprint') and record['plan_fingerprint'] != fingerprint(
+                    {key: fingerprint(value) for key, value in plan.profiles.items()}
+                ):
+                    raise ValueError('Resolved profile/organization content changed; replace the stopped container to apply it (data is retained)')
                 if config is not None and record["config_fingerprint"] != fingerprint(config.model_dump(mode="json")):
                     raise ValueError("Deployment configuration changed; stop and remove its container before starting a replacement (data is retained)")
                 if config is not None and record["options"] != options:
@@ -209,7 +213,9 @@ class DeploymentManager:
                       "options": options,
                       "created_at": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
                       "config_fingerprint": fingerprint(config.model_dump(mode="json")),
-                      "profiles": [{"id": p.id, "version": p.version, "fingerprint": fingerprint(p)}
+                      'plan_fingerprint': fingerprint({key: fingerprint(value) for key, value in plan.profiles.items()}),
+                      "profiles": [{"id": p.id, "version": p.version, "fingerprint": fingerprint(p),
+                                    'instance_id': p.instance_id or p.id, 'organization_id': p.organization_id}
                                    for members in plan.members.values() for p in members],
                       "listeners": [], "notes": []}
             stage = directory / ("snapshot-" + uuid.uuid4().hex)
@@ -285,7 +291,7 @@ class DeploymentManager:
         if set(overrides) - {listener.name for listener in plan.listeners}:
             raise ValueError("Publish override names an unknown listener")
         raw = config.model_dump(mode="json")
-        raw.update(data_dir="/data", listeners=[], deceptions=[], deception_defaults={})
+        raw.update(data_dir="/data", listeners=[], deceptions=[], deception_defaults={}, organization=None)
         if config.log_file:
             raw["log_file"] = "/data/telemetry.jsonl"
             record["notes"].append("Configured file telemetry is retained in the data volume at /data/telemetry.jsonl")
@@ -308,8 +314,10 @@ class DeploymentManager:
                         raise ValueError(f"Configured {key} file is missing")
                     row[key] = f"/material/{index}-{key}"
                     mounts.append((source, row[key]))
-            references = listener.profiles or [listener.profile]
-            staged = [snapshot_profile(reference, stage) for reference in references]
+            references = [plan.references.get(member.instance_id or member.id,
+                          listener.profile or listener.profiles[0]) for member in plan.members[listener.name]]
+            staged = [snapshot_profile(str(reference), stage, profile=member)
+                      for reference, member in zip(references, plan.members[listener.name])]
             row["profile"], row["profiles"] = (staged[0], []) if listener.profile else (None, staged)
             host_port = overrides.get(listener.name, listener.port)
             if not host_port:

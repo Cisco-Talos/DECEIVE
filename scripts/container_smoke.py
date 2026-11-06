@@ -150,6 +150,10 @@ asyncio.run(run())
     measurements["skills"] = json.loads(docker(
         "run", "--rm", "--platform", "linux/" + architecture, "--network", "none",
         "--entrypoint", "python", image, "-c", skills_program))
+    contracts_program = Path(__file__).with_name('check_contracts.py').read_text()
+    measurements['contracts'] = json.loads(docker(
+        'run', '--rm', '--platform', 'linux/' + architecture, '--network', 'none',
+        '--entrypoint', 'python', image, '-c', contracts_program))
     # Containerd may report only compressed content before a foreign-platform
     # image's first run. Measure after unpacking for comparable stored sizes.
     measurements["image_bytes"] = int(docker("image", "inspect", image, "--format", "{{.Size}}"))

@@ -1,0 +1,155 @@
+schema_version: 1
+profile_id: sudo-2019-14287
+version: '1'
+subject: Bounded sudo-2019-14287 product/platform behavior
+kind: real_product
+sources:
+- id: authored-design
+  kind: design
+  title: sudo-2019-14287
+  url: null
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - Profile-defined identities, application paths and payloads are authored requirements,
+    not external realism evidence.
+  limitations: []
+- id: ssh-channel
+  kind: standard
+  title: SSH Connection Protocol, RFC 4254
+  url: https://www.rfc-editor.org/rfc/rfc4254.html
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - Exec and shell channels distinguish ordinary data, extended stderr, exit status
+    and channel closure.
+  limitations: []
+- id: linux-id
+  kind: vendor
+  title: GNU id manual packaged by Ubuntu Jammy
+  url: https://manpages.ubuntu.com/manpages/jammy/en/man1/id.1.html
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - id reports user/group identity; -u selects effective numeric UID, -n selects its
+    name.
+  limitations:
+  - GNU options are broader than the approved sudo command subset.
+- id: os-release
+  kind: vendor
+  title: Operating system identification specification
+  url: https://www.freedesktop.org/software/systemd/man/latest/os-release.html
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - OS facts use shell-compatible UTF-8 assignments, with consistent ID, VERSION_ID
+    and display identity.
+  limitations:
+  - Current format documentation; distribution-specific contents need separate evidence.
+- id: sudo-disclosure
+  kind: disclosure
+  title: Todd C. Miller original sudo disclosure
+  url: https://seclists.org/oss-sec/2019/q4/18
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - Before 1.8.28, Runas ALL can allow -1 or 4294967295 to retain effective root despite
+    !root. Ordinary arbitrary numeric IDs and unchanged caller identity provide useful
+    comparisons.
+  limitations:
+  - PAM and host sudo logs described by the disclosure are not exposed by this profile.
+- id: sudo-detection
+  kind: detection
+  title: Elastic potential sudo privilege escalation rule
+  url: https://raw.githubusercontent.com/elastic/detection-rules/main/rules/linux/privilege_escalation_sudo_cve_2019_14287.toml
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - Detection focuses on suspicious sudo process arguments; it does not establish
+    successful privilege escalation.
+  limitations:
+  - Host process telemetry is not generated here. Rule prose abbreviates the affected
+    version incorrectly as v1.28; original disclosure governs version facts.
+criteria:
+- id: channel-fidelity
+  roles:
+  - protocol
+  - product
+  - attacker
+  - consistency
+  sources:
+  - ssh-channel
+  expectation: Exec and interactive results have credible stream, prompt, status and
+    closure behavior.
+  comparisons:
+  - Inspect banner/prompt; compare exec vs shell; provoke a declared failure and verify
+    subsequent status.
+  limitations: []
+- id: identity-coherence
+  roles:
+  - protocol
+  - product
+  - attacker
+  - consistency
+  sources:
+  - linux-id
+  - os-release
+  expectation: Identity and readable OS/account facts form one plausible system.
+  comparisons:
+  - Cross-check hostname, whoami, id and OS data across sessions, including privileged
+    command follow-ups.
+  limitations: []
+- id: sudo-workflow
+  roles:
+  - protocol
+  - product
+  - attacker
+  - consistency
+  sources:
+  - sudo-disclosure
+  - linux-id
+  - sudo-detection
+  expectation: Version, Runas policy, special numeric UID and privilege follow-ups
+    plausibly agree.
+  comparisons:
+  - Inspect sudo -V/-l; compare both special UIDs with ordinary UID1234, explicit
+    root denial and unchanged caller identity; use independently chosen equivalent
+    supported spellings.
+  limitations:
+  - No persistent root shell, real execution, PAM or host audit logs. Long id options
+    are excluded by frozen criteria.
+- id: scope-coherence
+  roles:
+  - protocol
+  - product
+  - attacker
+  - consistency
+  sources:
+  - authored-design
+  - ssh-channel
+  - linux-id
+  - os-release
+  - sudo-disclosure
+  - sudo-detection
+  expectation: Representative supported and nearby challenge interactions maintain
+    the researched platform/protocol conventions and consistent authored identity.
+  comparisons:
+  - Choose variations beyond the supplied examples; distinguish an impossible in-scope
+    result from a documented exclusion; identify material unknowns instead of awarding
+    maximum by default.
+  limitations:
+  - Authored application status and custom workbench command output establish functional
+    conformance only.
+unknowns:
+- No complete real-system equivalence claim. Material unsampled facets must remain
+  unassessed.
+- Research does not independently verify every distribution patch/build identity or
+  every configuration.
+search_notes:
+- Primary protocol/platform sources read as documentation; no live vulnerable reference
+  software, downloaded PoCs or scanners executed.
+- No genuine counterpart packet/session captures collected; documented behavior and
+  bounded plausibility are the available comparison basis.
+- Reviewed original maintainer disclosure (includes executable-shaped examples) and
+  Elastic detection source. sudo.ws advisory could not be retrieved; Sigma guessed
+  path returned404 and is not evidence.

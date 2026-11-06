@@ -1,0 +1,187 @@
+schema_version: 2
+id: workbench-http-ps51
+version: '2'
+description: Fictional Workbench 1.0 administration API with bounded powershell-5.1
+  commands.
+requirements:
+  protocol: https
+  http_versions:
+  - '1.1'
+  - '2'
+  - '3'
+  preferred_port: 8443
+parameters:
+  organization_name:
+    type: string
+    default: Example Industries
+  tenant_id:
+    type: string
+    default: demo
+    pattern: '[a-z][a-z0-9_-]{0,31}'
+  hostname:
+    type: string
+    default: workbench-01
+    pattern: '[a-z][a-z0-9-]{0,40}'
+identity:
+  hostname: ${hostname}
+  banner: Welcome to ${organization_name}
+  os: Microsoft Windows [Version 10.0.19045.5011]
+stateful: true
+command_environment:
+  dialect: powershell-5.1
+  username: guest
+  directories:
+  - C:\Temp
+  programs:
+  - name: workbench
+    path: C:\Tools\workbench.exe
+    help: 'Usage: workbench status|echo NAME
+
+      '
+    version: 'Workbench 1.0
+
+      '
+files:
+  C:\Users\guest\README.txt: '${organization_name} Workbench node ${hostname}
+
+    '
+contracts:
+- id: index
+  http:
+    path: /
+  reply:
+    body: '<!doctype html><title>Workbench</title><h1>${organization_name}</h1><p>Workbench
+      1.0</p>
+
+      '
+    headers:
+    - - content-type
+      - text/html; charset=utf-8
+  examples:
+  - GET /
+- id: index-head
+  http:
+    path: /
+    method: HEAD
+  reply:
+    body: '<!doctype html><title>Workbench</title><h1>${organization_name}</h1><p>Workbench
+      1.0</p>
+
+      '
+    headers:
+    - - content-type
+      - text/html; charset=utf-8
+  examples:
+  - GET /
+- id: status
+  http:
+    path: /api/${tenant_id}/status
+  reply:
+    body_json:
+      application: Workbench
+      version: '1.0'
+      organization: ${organization_name}
+      hostname: ${hostname}
+      ready: true
+    headers:
+    - - content-type
+      - application/json
+  checks:
+    json_fields:
+      ready: true
+    json_types:
+      hostname: string
+- id: status-head
+  http:
+    path: /api/${tenant_id}/status
+    method: HEAD
+  reply:
+    body_json:
+      application: Workbench
+      version: '1.0'
+      organization: ${organization_name}
+      hostname: ${hostname}
+      ready: true
+    headers:
+    - - content-type
+      - application/json
+  checks:
+    json_fields:
+      ready: true
+    json_types:
+      hostname: string
+- id: job
+  http:
+    path: /api/${tenant_id}/jobs/{job_id}
+  reply:
+    body_json:
+      id: ${request.path.job_id}
+      status: queued
+    headers:
+    - - content-type
+      - application/json
+  checks:
+    json_types:
+      id: string
+  examples:
+  - GET /api/demo/jobs/build-42
+- id: job-head
+  http:
+    path: /api/${tenant_id}/jobs/{job_id}
+    method: HEAD
+  reply:
+    body_json:
+      id: ${request.path.job_id}
+      status: queued
+    headers:
+    - - content-type
+      - application/json
+  checks:
+    json_types:
+      id: string
+  examples:
+  - GET /api/demo/jobs/build-42
+- id: execute
+  http:
+    path: /api/${tenant_id}/command
+    method: POST
+  endpoint:
+    source: json
+    field: command
+    response: json
+  checks:
+    json_types:
+      stdout: string
+      stderr: string
+      exit_status: integer
+  examples:
+  - POST /api/demo/command {"command":"hostname"}
+- id: program-status
+  command:
+    program: workbench
+    args:
+    - status
+  reply:
+    body: '${hostname}: ready
+
+      '
+  checks:
+    text: '${hostname}: ready
+
+      '
+- id: program-echo
+  command:
+    program: workbench
+    args:
+    - echo
+    - '{name}'
+  reply:
+    body: '${command.name}
+
+      '
+limitations:
+- Fictional application; no real CVE claim.
+- Only documented literal commands and argument forms are deterministic.
+- No shell pipelines, scripts, registry, callbacks or host filesystem access.
+- Web commands start fresh processes; private files persist only within the application
+  cookie session.

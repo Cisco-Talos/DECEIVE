@@ -10,7 +10,7 @@ import re
 import yaml
 import regex
 
-from deceive.models import Deployment, Profile
+from deceive.models import Deployment, Profile, Selection
 
 
 class UniqueLoader(yaml.SafeLoader):
@@ -47,16 +47,28 @@ def relative_path(base: Path, value: str | Path) -> Path:
     return path.resolve() if path.is_absolute() else (base / path).resolve()
 
 
-def load_profile(reference: str, base: Path | None = None) -> Profile:
+def load_profile(reference: str, base: Path | None = None, *, organization: Path | None = None,
+                 parameters: dict | None = None, instance_id: str | None = None,
+                 _seen: tuple[Path, ...] = (), _allow_unused: bool = False) -> Profile:
     base = base or Path.cwd()
     path = relative_path(base, reference)
-    if not path.is_file() and re.fullmatch(r"[a-z0-9-]+", reference):
+    if not path.is_file() and re.fullmatch(r"[a-z0-9_-]+", reference):
         resource = files("deceive").joinpath("profiles", reference + ".yaml")
         if resource.is_file():
             path = Path(str(resource))
     if not path.is_file():
         raise ValueError(f"Profile not found: {reference}")
-    profile = Profile.model_validate(read_yaml(path))
+    raw = read_yaml(path)
+    if raw.get('schema_version') == 2 and not raw.get('binding_fingerprint'):
+        from deceive.binding import load_bound
+        profile = load_bound(path, raw, organization=organization, parameters=parameters,
+                             instance_id=instance_id, seen=_seen, allow_unused=_allow_unused)
+    else:
+        if parameters and not _allow_unused:
+            raise ValueError('Parameter overrides require an authored schema version 2 profile')
+        profile = Profile.model_validate(raw)
+        if instance_id:
+            profile.instance_id = instance_id
     if profile.requirements and profile.requirements.base_profile:
         reference = profile.requirements.base_profile
         candidate = relative_path(path.parent, reference)
@@ -69,6 +81,8 @@ def load_profile(reference: str, base: Path | None = None) -> Profile:
         profile.prompt = prompt.read_text()
         profile.prompt_file = None
     replies = [behavior.reply for behavior in profile.behaviors] + [profile.fallback_reply]
+    for contract in profile.contracts:
+        replies.extend(r for r in (contract.reply, contract.error, contract.fallback) if r is not None)
     for reply in replies:
         if reply.body_file:
             asset = relative_path(path.parent, reply.body_file)
@@ -111,6 +125,8 @@ def load_deployment(path: Path, *, additional_profiles: list[str] | None = None)
             {"profile": _profile_reference(Path.cwd(), ref)} for ref in additional_profiles]
     base = path.resolve().parent
     deployment = Deployment.model_validate(raw)
+    if deployment.organization:
+        deployment.organization = relative_path(base, deployment.organization)
     deployment.data_dir = relative_path(base, deployment.data_dir)
     if deployment.log_file:
         deployment.log_file = relative_path(base, deployment.log_file)
@@ -119,14 +135,16 @@ def load_deployment(path: Path, *, additional_profiles: list[str] | None = None)
             provider.api_key_file = relative_path(base, provider.api_key_file)
     for listener in deployment.listeners:
         if listener.profile:
-            listener.profile = _profile_reference(base, listener.profile)
-        listener.profiles = [_profile_reference(base, ref) for ref in listener.profiles]
+            listener.profile = _selection_reference(base, listener.profile)
+        listener.profiles = [_selection_reference(base, ref) for ref in listener.profiles]
         for field in ("host_key", "cert_file", "key_file"):
             value = getattr(listener, field)
             if value:
                 setattr(listener, field, relative_path(base, value))
     for deception in deployment.deceptions:
         deception.profile = _profile_reference(base, deception.profile)
+        if deception.organization:
+            deception.organization = relative_path(base, deception.organization)
     return deployment
 
 
@@ -135,3 +153,17 @@ def _profile_reference(base: Path, reference: str) -> str:
     if candidate.is_file() or "/" in reference or reference.endswith((".yaml", ".yml")):
         return str(candidate)
     return reference
+
+
+def _selection_reference(base: Path, reference: str | Selection) -> str | Selection:
+    if isinstance(reference, str):
+        return _profile_reference(base, reference)
+    result = reference.model_copy(deep=True)
+    result.profile = _profile_reference(base, result.profile)
+    if result.organization:
+        result.organization = relative_path(base, result.organization)
+    return result
+
+
+def profile_base(profile: Profile) -> Profile:
+    return profile._bound_base or load_profile(profile.requirements.base_profile)

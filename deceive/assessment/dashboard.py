@@ -11,6 +11,18 @@ from deceive.assessment.workspace import load_json, write_json
 from deceive.assessment.scoring import repeatability
 
 COLORS = {"protocol": "#7c3aed", "product": "#0284c7", "attacker": "#ea580c", "consistency": "#059669"}
+GAPS = {'incomplete_review': ('REV', '#e2e8f0'), 'harness_error': ('HAR', '#ddd6fe'),
+        'infrastructure_interruption': ('INF', '#fecaca'),
+        'deception_defect': ('DEF', '#fed7aa'), 'technical_failure': ('TECH', '#fef08a')}
+
+
+def gap_label(target: dict) -> tuple[str, str]:
+    categories = {i['category'] for i in target.get('assessment_issues', [])}
+    for category in ('infrastructure_interruption', 'harness_error', 'deception_defect',
+                     'technical_failure', 'incomplete_review'):
+        if category in categories:
+            return GAPS[category]
+    return ('N/A', '#e2e8f0')
 
 
 def render(run: Path) -> Path:
@@ -26,9 +38,22 @@ def render(run: Path) -> Path:
         visible_findings = [f for f in history_findings.values()
                             if f["verification"]["status"] not in {"resolved", "false_positive"}]
         for handle, target in latest["targets"].items():
-            notes.append(f'{handle}: {len(target["scores"])}/{len(state["spec"]["roles"])} reviewers; '
+            notes.append(f'{handle}: {target.get("reviewers_received", len(target["scores"]))}/{len(state["spec"]["roles"])} reports; '
+                         f'{sum(target.get("role_complete", {}).values())} validated role reviews; '
                          f'{target["telemetry"].get("observations", 0)} captured actions; '
                          f'correctness {target["correctness"]["status"]}; telemetry {target["telemetry"]["status"]}')
+            notes.append(f"{handle}: {target.get('assessment_status', 'legacy_unvalidated')}")
+            for role, dimensions in target.get('dimensions', {}).items():
+                notes.extend(textwrap.wrap(f"{handle}/{role}: " + ', '.join(
+                    f'{name}={value:g}' for name, value in dimensions.items()), width=142))
+            for error in target.get('assessment_errors', [])[:8]:
+                notes.extend(textwrap.wrap(f'{handle}: {error}', width=142))
+            for issue in target.get('assessment_issues', []):
+                notes.extend(textwrap.wrap(f"{handle} [{issue['category']}]: {issue['message']}", width=142))
+        sensitivity = latest.get('calibration_results', {})
+        notes.append(f"Calibration: {'passed' if sensitivity.get('passed') else 'unvalidated'}; "
+                     f"{len(sensitivity.get('detections', []))} detections; "
+                     f"{len(sensitivity.get('missing', []))} missing role/protocol/difficulty checks")
         for finding in visible_findings[:12]:
             notes.extend(textwrap.wrap(f'{finding["severity"]} {finding["target"]} '
                 f'[{finding["verification"]["status"]}] {finding["description"]}', width=142)[:3])
@@ -70,8 +95,12 @@ def render(run: Path) -> Path:
     text(42, 80, f'{state["run_id"]} · {status} · {len(state["loops"])} completed loops', 17)
     text(42, 108, "Realism: higher is better. Panel median is not reviewer confidence or measured fidelity.")
     text(42, 135, f'Rubric {state["spec"].get("review_rubric", "legacy-v1")} · Native-agent cost: unavailable · Calibration controls scored separately')
+    if state['spec'].get('review_rubric') != 'research-v4':
+        text(42, 157, 'Legacy scores are unvalidated for realism qualification; historical numeric values are preserved.', 13, '#b45309')
+    elif loops:
+        text(42, 157, f"Assessment: {loops[-1].get('assessment_status', 'insufficiently_assessed')} · Missing evidence/calibration appears as gaps", 13, '#334155')
     if state.get("final_candidate_fresh") is False:
-        text(42, 157, "Working tree changed since assessment; historical scores do not qualify the current tree.", 13, "#b45309")
+        notes.append("Working tree changed since assessment; historical scores do not qualify the current tree.")
     threshold = state["spec"]["policy"]["minimum_realism"]
     x0, y0, width, plot_height = 70, 220, 1120, 260
     text(42, 180, "1 · Worst target per reviewer, panel median and five-loop rolling median", 19, "#0f172a", "bold")
@@ -91,14 +120,15 @@ def render(run: Path) -> Path:
 
     series = {}
     for role in state["spec"]["roles"]:
-        series[role] = [min(v["scores"][role] for v in values(loop))
-                        if values(loop) and all(role in v["scores"] for v in values(loop)) else None
+        series[role] = [min(v.get('valid_scores', v['scores'])[role] for v in values(loop))
+                        if values(loop) and all(role in v.get('valid_scores', v['scores']) for v in values(loop)) else None
                         for loop in loops]
     medians = [score(loop) for loop in loops]
     rolling = []
     for index, value in enumerate(medians):
         recent = medians[max(0, index - 4):index + 1]
-        rolling.append(median(recent) if value is not None and all(v is not None for v in recent) else None)
+        comparable = len({l['comparison_id'] for l in loops[max(0, index - 4):index + 1]}) == 1
+        rolling.append(median(recent) if comparable and value is not None and all(v is not None for v in recent) else None)
     series.update(median=medians, rolling5=rolling)
     for index, (name, data) in enumerate(series.items()):
         color = COLORS.get(name, "#111827" if name == "median" else "#64748b")
@@ -108,7 +138,7 @@ def render(run: Path) -> Path:
             if value is None:
                 previous = None
                 continue
-            if previous is not None:
+            if previous is not None and loops[previous]['comparison_id'] == loops[i]['comparison_id']:
                 line(x(previous), y(data[previous]), x(i), y(value), color, 2.5)
             parts.append(f'<circle cx="{x(i)}" cy="{y(value)}" r="4" fill="{color}"/>')
             previous = i
@@ -124,28 +154,31 @@ def render(run: Path) -> Path:
     text(42, 652, "3 · Loop delta in worst-target median", 17)
     line(70, 710, 1190, 710)
     for index in range(1, len(loops)):
-        if medians[index] is None or medians[index - 1] is None:
+        if (medians[index] is None or medians[index - 1] is None or
+                loops[index]['comparison_id'] != loops[index - 1]['comparison_id']):
             continue
         delta = medians[index] - medians[index - 1]
         h = min(abs(delta) * 3, 48)
         rect(x(index) - 8, 710 - h if delta >= 0 else 710, 16, max(h, 1),
              "#16a34a" if delta >= 0 else "#dc2626")
         text(x(index) - 9, 774, f"{delta:+g}", 11)
-    text(42, 822, "4 · Target heatmap · correctness / telemetry / verified open P0–P1", 18, "#0f172a", "bold")
+    text(42, 809, "4 · Target heatmap · correctness / telemetry / verified open P0–P1", 18, "#0f172a", "bold")
+    text(42, 834, "Gaps: REV incomplete review · HAR harness error · INF infrastructure · DEF verified defect · TECH technical gate", 12)
     cell_width = min(78, 880 / max(1, len(loops)))
     for row, handle in enumerate(handles):
         yy = 855 + row * 42
         latest = next(loop["targets"][handle] for loop in reversed(loops) if handle in loop["targets"])
-        ids = ",".join(p["id"] for p in latest.get("profiles", []))
+        ids = ",".join(p.get('instance_id', p['id']) for p in latest.get("profiles", []))
         text(42, yy + 22, handle, 12)
         text(140, yy + 22, ids[:26] + (" [control]" if latest.get("calibration") else ""), 11)
         for col, loop in enumerate(loops):
             v = loop["targets"].get(handle)
             value = v["median"] if v and v["complete"] else None
-            color = "#e2e8f0" if value is None else "#bbf7d0" if v["qualified"] else "#fed7aa"
+            label, gap_color = gap_label(v or {})
+            color = gap_color if value is None else "#bbf7d0" if v["qualified"] else "#fed7aa"
             xx = 330 + col * cell_width
             rect(xx, yy, cell_width - 3, 34, color)
-            text(xx + 4, yy + 15, "N/A" if value is None else f"{value:g}", 11)
+            text(xx + 4, yy + 15, label if value is None else f"{value:g}", 11)
             if v:
                 critical = sum(f["target"] == handle and f["severity"] in {"P0", "P1"} and
                     f["verification"]["status"] == "verified" for f in loop["findings"])

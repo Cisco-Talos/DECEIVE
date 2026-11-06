@@ -1,6 +1,6 @@
 schema_version: 1
 id: linux-ssh
-version: "3"
+version: "5"
 description: A Linux build host with stable identity, virtual baseline files and LLM fallback.
 protocol: ssh
 requirements:
@@ -15,17 +15,29 @@ identity:
   username: guest
   uid: 1000
   ssh_version: OpenSSH_8.9p1 Ubuntu-3ubuntu0.10
-  banner: Welcome to the build server.
+  banner: |
+    Ubuntu 22.04.5 LTS
+    Linux build-node-03 5.15.0-130-generic x86_64
+
+    Authorized access only. Activity on this host may be monitored.
 files:
   /etc/hostname: "build-node-03\n"
+  /etc/motd: |
+    Ubuntu 22.04.5 LTS
+    Linux build-node-03 5.15.0-130-generic x86_64
+
+    Authorized access only. Activity on this host may be monitored.
   /etc/os-release: "NAME=Ubuntu\nVERSION=22.04.5\nID=ubuntu\nPRETTY_NAME=\"Ubuntu 22.04.5 LTS\"\n"
   /etc/passwd: "root:x:0:0:root:/root:/bin/bash\nguest:x:1000:1000:Build Guest:/home/guest:/bin/bash\n"
+  /home/guest/.bashrc: "# ~/.bashrc: settings for interactive bash shells.\n"
+  /home/guest/.profile: "# ~/.profile: settings for login shells.\n"
   /home/guest/README.txt: "Build artifacts are available through the portal.\n"
 behaviors:
   - id: virtual-files
     kind: virtual_files
     options:
       directories: [/tmp, /var/tmp]
+      listing_time: 'Mar 19  2024'
   - id: identity
     kind: identity
 fallback: llm
@@ -39,9 +51,18 @@ prompt: |
   The supplied file/directory view is authoritative, including sizes derived from
   UTF-8 file bytes. Do not invent extra files in listings. Unsupported mutations
   must not claim lasting effects absent from this view. Simple literal file
-  commands are handled by the runtime; shell expansions and full grammar are not
+  commands and single-file wc -c/--bytes counts are handled by the runtime;
+  shell expansions and full grammar are not
   implemented. Answer unsupported forms conservatively rather than inventing effects.
+  Preserve normal output separately from diagnostics even when a command fails.
+  A nonzero exit status does not imply empty stdout. For numeric printf conversion
+  errors, the converted numeric value still goes to stdout according to FORMAT;
+  only the diagnostic goes to stderr, with exit status 1. Do not append the numeric
+  output to the diagnostic stream or invent a trailing newline absent from FORMAT.
+references:
+  - https://manpages.ubuntu.com/manpages/jammy/en/man1/printf.1.html
+  - https://raw.githubusercontent.com/coreutils/coreutils/v8.32/src/printf.c
 limitations:
   - Declared identity and basic virtual-file commands are deterministic; unsupported command forms use generative fallback.
   - Other command output is generative; no command executes on a real system.
-  - Simple cat/ls/cd/touch/mkdir/rm and literal echo redirection use bounded private virtual files; full shell grammar, permissions and file timestamps are not emulated.
+  - Simple cat/ls/cd/touch/mkdir/rm, single-file wc -c/--bytes and literal echo redirection use bounded private virtual files; stdin counting, full shell grammar, permissions and file timestamps are not emulated.

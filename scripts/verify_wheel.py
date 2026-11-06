@@ -41,7 +41,8 @@ def main() -> None:
         packages = int(subprocess.check_output([str(interpreter), "-c",
             "from importlib.metadata import distributions;print(len(list(distributions())))"],
             cwd=root, env=env, text=True))
-        for name in ("demo-http", "linux-ssh", "sudo-2019-14287", "apache-2021-41773"):
+        for name in ("demo-http", "linux-ssh", "sudo-2019-14287", "apache-2021-41773",
+                     "sshhole-2026-123158"):
             subprocess.run([str(binary), "profile", "validate", name], cwd=root, env=env, check=True)
         catalog = json.loads(subprocess.check_output([str(binary), "profile", "list", "--json"],
                                                     cwd=root, env=env, text=True))
@@ -91,6 +92,8 @@ asyncio.run(run())
         subprocess.run([str(interpreter), "-c", composition_program], cwd=root, env=env, check=True)
         ssh_program = Path(__file__).with_name("check_ssh_fidelity.py").read_text()
         subprocess.run([str(interpreter), "-c", ssh_program], cwd=root, env=env, check=True)
+        contracts_program = Path(__file__).with_name('check_contracts.py').read_text()
+        subprocess.run([str(interpreter), '-c', contracts_program], cwd=root, env=env, check=True)
         skills_program = Path(__file__).with_name("check_installed_skills.py").read_text()
         subprocess.run([str(interpreter), "-c", skills_program], cwd=root, env=env, check=True)
         with (root / "stdout.jsonl").open("w+") as output:

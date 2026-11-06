@@ -1,0 +1,204 @@
+schema_version: 1
+profile_id: workbench-http-linux
+version: '2'
+subject: Fictional application and bounded platform/protocol plausibility
+kind: fictional
+sources:
+- id: authored-design
+  kind: design
+  title: workbench-http-linux
+  url: null
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - Profile-defined identities, application paths and payloads are authored requirements,
+    not external realism evidence.
+  limitations: []
+- id: http-semantics
+  kind: standard
+  title: HTTP Semantics, RFC 9110
+  url: https://www.rfc-editor.org/rfc/rfc9110.html
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - HEAD carries no response content; representation metadata must remain meaningful.
+    Status, method and media type have distinct semantics.
+  limitations: []
+- id: http2
+  kind: standard
+  title: HTTP/2, RFC 9113
+  url: https://www.rfc-editor.org/rfc/rfc9113.html
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - HTTP semantics survive multiplexed streams; stream completion and forbidden connection-specific
+    fields matter.
+  limitations: []
+- id: http3
+  kind: standard
+  title: HTTP/3, RFC 9114
+  url: https://www.rfc-editor.org/rfc/rfc9114.html
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - HTTP semantics run on QUIC streams; response completion and advertised discovery
+    must agree with the endpoint.
+  limitations: []
+- id: cookies
+  kind: standard
+  title: HTTP State Management, RFC 6265
+  url: https://www.rfc-editor.org/rfc/rfc6265.html
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - Separate Set-Cookie fields establish scoped client cookies; user agents maintain
+    their own cookie stores.
+  limitations: []
+- id: linux-printf
+  kind: vendor
+  title: GNU printf manual packaged by Ubuntu Jammy
+  url: https://manpages.ubuntu.com/manpages/jammy/en/man1/printf.1.html
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - The format controls output, including escapes and absence of a trailing newline.
+  limitations:
+  - Shell builtins can differ from the external utility; compare only the declared
+    literal subset.
+- id: linux-ls
+  kind: vendor
+  title: GNU ls manual packaged by Ubuntu Jammy
+  url: https://manpages.ubuntu.com/manpages/jammy/en/man1/ls.1.html
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - ls lists selected file/directory entries; default sorting and hidden-entry rules
+    depend on options.
+  limitations: []
+- id: linux-id
+  kind: vendor
+  title: GNU id manual packaged by Ubuntu Jammy
+  url: https://manpages.ubuntu.com/manpages/jammy/en/man1/id.1.html
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - id reports user/group identity; -u selects effective numeric UID, -n selects its
+    name.
+  limitations:
+  - GNU options are broader than the approved sudo command subset.
+- id: os-release
+  kind: vendor
+  title: Operating system identification specification
+  url: https://www.freedesktop.org/software/systemd/man/latest/os-release.html
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - OS facts use shell-compatible UTF-8 assignments, with consistent ID, VERSION_ID
+    and display identity.
+  limitations:
+  - Current format documentation; distribution-specific contents need separate evidence.
+- id: linux-wc
+  kind: vendor
+  title: Ubuntu Jammy GNU wc8.32 manual
+  url: https://manpages.ubuntu.com/manpages/jammy/man1/wc.1.html
+  retrieved: '2026-11-04'
+  facts:
+  - The -c/--bytes option counts bytes, distinct from character counts. A single file
+    count is followed by its filename.
+  limitations:
+  - The deterministic primitive is limited to one regular virtual file; stdin and
+    the full option grammar are excluded.
+criteria:
+- id: http-fidelity
+  roles:
+  - protocol
+  - product
+  - attacker
+  - consistency
+  sources:
+  - http-semantics
+  - http2
+  - http3
+  expectation: Representation bytes, headers, errors and completion remain credible
+    across claimed HTTP versions.
+  comparisons:
+  - Compare GET/HEAD on a representative resource, a negative request, media type
+    and length; substantive workflow on each advertised version.
+  limitations: []
+- id: private-client-state
+  roles:
+  - protocol
+  - product
+  - attacker
+  - consistency
+  sources:
+  - cookies
+  expectation: Independent clients have separate cookie stores and claimed private
+    application state.
+  comparisons:
+  - Create a unique marker in one cookie client and read it; use an untouched independent
+    recipient; repeat after reconnect.
+  limitations:
+  - Application lifetime is an authored design choice; cookie standards do not require
+    private files.
+- id: linux-command-fidelity
+  roles:
+  - protocol
+  - product
+  - attacker
+  - consistency
+  sources:
+  - linux-id
+  - linux-printf
+  - linux-ls
+  - linux-wc
+  expectation: Declared Linux commands have coherent identity, text streams and file
+    observations.
+  comparisons:
+  - Use independent markers, quoted ASCII printf with and without newline where generative
+    output is claimed; follow file writes with reads/listings, missing reads and independent
+    process checks.
+  - Compare wc -c/--bytes against actual current read bytes, including UTF-8 content
+    and a private overwrite/removal.
+  limitations:
+  - printf is generative only on linux-ssh; Workbench has no printf capability claim.
+    Full shell grammar, timestamps and exact permissions are excluded.
+- id: scope-coherence
+  roles:
+  - protocol
+  - product
+  - attacker
+  - consistency
+  sources:
+  - authored-design
+  - http-semantics
+  - http2
+  - http3
+  - cookies
+  - linux-printf
+  - linux-ls
+  - linux-id
+  - os-release
+  expectation: Representative supported and nearby challenge interactions maintain
+    the researched platform/protocol conventions and consistent authored identity.
+  comparisons:
+  - Choose variations beyond the supplied examples; distinguish an impossible in-scope
+    result from a documented exclusion; identify material unknowns instead of awarding
+    maximum by default.
+  limitations:
+  - Authored application status and custom workbench command output establish functional
+    conformance only.
+unknowns:
+- No complete real-system equivalence claim. Material unsampled facets must remain
+  unassessed.
+- Research does not independently verify every distribution patch/build identity or
+  every configuration.
+search_notes:
+- Primary protocol/platform sources read as documentation; no live vulnerable reference
+  software, downloaded PoCs or scanners executed.
+- No genuine counterpart packet/session captures collected; documented behavior and
+  bounded plausibility are the available comparison basis.
+- No CVE/affected-product exploit claim for this profile; CVE-specific PoCs/detectors
+  are not applicable.
+- GNU/OpenGroup direct retrieval failed; Ubuntu-packaged GNU manuals were retrieved
+  instead.

@@ -1,0 +1,18 @@
+schema_version: 1
+id: workbench-calibration
+version: '1'
+cases:
+  - id: identity
+    steps:
+      - path: /api/demo/status
+        expect: {status: 200, json_value: {version: '1.0', ready: true}}
+  - id: required-job
+    steps:
+      - path: /api/demo/jobs/build-42
+        expect: {status: 200, json_value: {id: build-42, status: queued}}
+  - id: missing-command
+    steps:
+      - path: /api/demo/command
+        method: POST
+        body: '{}'
+        expect: {status: 400}

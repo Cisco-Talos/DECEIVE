@@ -40,7 +40,8 @@ def repeatability(loops: list[dict]) -> dict:
 
 def quality_confirmed(loops: list[dict], policy: Policy) -> bool:
     same = loops[-policy.confirmations:]
-    return (len(same) == policy.confirmations and all(l["qualified"] for l in same)
+    return (len(same) == policy.confirmations and all(l["qualified"] and
+            l.get('assessment_status') == 'assessed' and l.get('review_rubric') == 'research-v4' for l in same)
             and len({l["candidate_id"] for l in same}) == 1
             and len({l["comparison_id"] for l in same}) == 1)
 
@@ -54,7 +55,8 @@ def exit_reason(loops: list[dict], policy: Policy) -> str | None:
     if quality_confirmed(loops, policy):
         return "quality_success"
     window = loops[-(policy.plateau_cycles + 1):]
-    if (len(window) == policy.plateau_cycles + 1 and all(l["complete"] for l in window)
+    if (len(window) == policy.plateau_cycles + 1 and all(l["complete"] and
+        l.get('assessment_status') == 'assessed' and l.get('review_rubric') == 'research-v4' for l in window)
         and len({l["comparison_id"] for l in window}) == 1
         and not any(l.get("progress") for l in window[1:])):
         unmet = [t for t, v in last["targets"].items() if not v["qualified"]]

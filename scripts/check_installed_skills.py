@@ -63,8 +63,32 @@ def check() -> dict:
                         address = urlsplit(target)
                         if not address.scheme and address.path:
                             assert (path.parent / unquote(address.path)).is_file(), (path, target)
+                # Exercise YAML asset ownership from an installed skill, outside the checkout.
+                from deceive.assessment.models import Spec
+                from deceive.assessment.workspace import resolve_spec, target_deployment
+                from deceive.composition import resolve
+                spec = resolve_spec(agent_root / 'deceive-assess/references/examples/assessment-quality.yaml')
+                frozen = Spec.model_validate(spec.model_dump(mode='json'))
+                assert frozen.review_rubric == 'evidence-v3'
+                for target in frozen.targets:
+                    assert resolve(target_deployment(frozen, target)).profiles
+                    assert target.coverage
+                    if target.suite:
+                        assert Path(target.suite).is_file()
+                researched = resolve_spec(agent_root / 'deceive-assess/references/examples/assessment-research.yaml')
+                assert researched.review_rubric == 'research-v4'
+                assert all(target.research for target in researched.targets)
+                from deceive.assessment.research import Dossier
+                import yaml
+                research_assets = files('deceive').joinpath('research')
+                dossiers = [Dossier.model_validate(yaml.safe_load(p.read_text()))
+                            for p in research_assets.iterdir() if p.name.endswith('.yaml')]
+                profile_ids = {p.name.removesuffix('.yaml') for p in
+                    files('deceive').joinpath('profiles').iterdir() if p.name.endswith('.yaml')}
+                assert {d.profile_id for d in dossiers} == profile_ids
     return {'passed': True, 'agents': ['claude', 'chatgpt'], 'skills': 3,
-            'updated_added_removed': True, 'references_resolve': True, 'isolated_home': True}
+            'updated_added_removed': True, 'references_resolve': True, 'isolated_home': True,
+            'v3_assessment_assets': True, 'v4_research_assets': True}
 
 
 if __name__ == '__main__':

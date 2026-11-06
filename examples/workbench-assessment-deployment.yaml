@@ -1,0 +1,6 @@
+# Assessment-only capacity for four bounded reviewers plus acceptance traffic.
+schema_version: 1
+limits:
+  sessions: 512
+deceptions:
+- profile: workbench-http-linux

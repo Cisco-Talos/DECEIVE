@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 
 import asyncssh
@@ -49,6 +50,9 @@ class SSHConnection(asyncssh.SSHServer):
         if self.session is None:
             return True
         self.session.username = username
+        if self.runtime.profiles[self.listener.name].ssh_auth:
+            self.runtime.emit(self.session, "User attempting to authenticate", username=username)
+            return True
         if self.listener.accounts.get(username) == "":
             self.runtime.emit(self.session, "Authentication success", username=username, password="")
             return False
@@ -56,14 +60,35 @@ class SSHConnection(asyncssh.SSHServer):
         return True
 
     def password_auth_supported(self) -> bool:
+        policy = self.runtime.profiles[self.listener.name].ssh_auth
+        if policy:
+            return policy.password_authentication
         return True
 
     def public_key_auth_supported(self) -> bool:
         return False
 
     def validate_password(self, username: str, password: str) -> bool:
-        expected = self.listener.accounts.get(username, "*")
-        success = expected == "*" or password == expected
+        policy = self.runtime.profiles[self.listener.name].ssh_auth
+        if policy:
+            account = policy.accounts.get(username)
+            permitted = (policy.password_authentication and account is not None
+                         and account.shell not in {'/sbin/nologin', '/usr/sbin/nologin',
+                                                   '/bin/false', '/usr/bin/false'}
+                         and (username != 'root' or policy.permit_root_login == 'yes'))
+            if permitted and account.shadow in {'$5$', '$6$'}:
+                success = password == account.password
+            elif permitted and account.shadow == '*':
+                success = (not policy.use_pam and not policy.patched
+                           and any(a.shadow in {'$5$', '$6$'} for a in policy.accounts.values())
+                           and 257 <= len(password.encode('utf-8')) <= 1024)
+            else:
+                success = False
+            if success and self.session:
+                self.session.state['uid'] = str(account.uid)
+        else:
+            expected = self.listener.accounts.get(username, "*")
+            success = expected == "*" or password == expected
         if self.session:
             self.runtime.emit(self.session, "Authentication success" if success else "Authentication failed",
                               username=username, password=password)
@@ -72,12 +97,22 @@ class SSHConnection(asyncssh.SSHServer):
 
 def prompt(runtime: Runtime, session) -> bytes:
     profile = runtime.profiles[session.listener]
+    if profile.command_environment and profile.command_environment.dialect != 'linux':
+        from deceive.commands import home
+        cwd = session.state.get('cwd', home(profile, session))
+        prefix = 'PS ' if profile.command_environment.dialect.startswith('powershell') else ''
+        return (prefix + cwd + '> ').encode()
     user = session.state.get("user", session.username)
     home = "/root" if session.username == "root" else f"/home/{session.username}"
     cwd = session.state.get("cwd", home)
     display = "~" + cwd[len(home):] if cwd == home or cwd.startswith(home + "/") else cwd
     suffix = "#" if user == "root" else "$"
     return f"{user}@{profile.identity.hostname}:{display}{suffix} ".encode()
+
+
+def terminal_output(content: bytes, onlcr: bool) -> bytes:
+    """Apply the PTY's newline convention without changing SSH exec output."""
+    return re.sub(rb"(?<!\r)\n", b"\r\n", content) if onlcr else content
 
 
 async def handle_process(process: asyncssh.SSHServerProcess, runtime: Runtime,
@@ -106,31 +141,50 @@ async def handle_process(process: asyncssh.SSHServerProcess, runtime: Runtime,
                 exit_status = result.exit_status
                 return
             profile = runtime.profiles[listener.name]
-            process.stdout.write((profile.identity.banner + "\n").encode() + prompt(runtime, session))
+            onlcr = (process.get_terminal_type() is not None
+                     and process.get_terminal_mode(asyncssh.PTY_ONLCR) == 1)
+            process.stdout.write(terminal_output((profile.identity.banner + "\n").encode(), onlcr)
+                                 + prompt(runtime, session))
             # Read bytes incrementally: readline() could accumulate an unbounded
             # attacker-controlled line before the configured limit is checked.
             line = bytearray()
+            terminal_echo = (process.get_terminal_type() is not None
+                             and process.get_terminal_mode(asyncssh.PTY_ECHO) == 1)
+            previous_cr = False
             while not session.closed:
                 data = await asyncio.wait_for(process.stdin.read(1), runtime.limits.idle_seconds)
                 if not data:
                     break
                 session.touched = time.monotonic()
-                if data == b"\n":
+                if data == b"\n" and previous_cr:
+                    previous_cr = False
+                    continue
+                previous_cr = data == b"\r"
+                if data in (b"\r", b"\n"):
+                    if terminal_echo:
+                        process.stdout.write(b"\r\n")
                     result = await runtime.respond(session, Interaction(
                         "ssh", command=line.rstrip(b"\r").decode("utf-8", "replace"),
                         raw_input=bytes(line.rstrip(b"\r")), interactive=True
                     ))
                     line.clear()
                     # A shell terminal displays both streams before its next prompt.
-                    process.stdout.write(result.body + result.stderr)
+                    process.stdout.write(terminal_output(result.body + result.stderr, onlcr))
                     exit_status = result.exit_status
                     if result.close:
                         break
                     process.stdout.write(prompt(runtime, session))
+                elif data in (b"\x08", b"\x7f"):
+                    if line:
+                        line.pop()
+                        if terminal_echo:
+                            process.stdout.write(b"\b \b")
                 else:
                     line.extend(data)
                     if len(line) > runtime.limits.input_bytes:
                         raise ValueError("SSH input line exceeds configured limit")
+                    if terminal_echo and data[0] >= 32:
+                        process.stdout.write(data)
     except (TimeoutError, ValueError, CapacityError, ProviderError) as exc:
         exit_status = 1
         runtime.emit(session, "Session limit or response failure", error_type=type(exc).__name__)

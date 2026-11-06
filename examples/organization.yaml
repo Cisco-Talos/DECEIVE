@@ -1,0 +1,6 @@
+schema_version: 1
+id: acme
+version: '1'
+values:
+  organization_name: Acme Research
+  tenant_id: acme

@@ -1,5 +1,10 @@
 # Profiles and extension interfaces
 
+For schema version 2 parameters, organization/instance bindings, required HTTP
+and command contracts, and virtual Linux/Windows command environments, see the
+[behavior contract guide](behavior-contracts.md). Existing version 1 profiles
+keep the behavior documented below.
+
 A profile is a versioned YAML document. Deterministic, generative and hybrid
 profiles use the same protocol engines. See the packaged `demo-http` and
 `linux-ssh` examples. The JSON schema can also be inspected through
@@ -141,6 +146,28 @@ declare its supported command family and fidelity explicitly. A narrow HTTP
 deception need not model an operating system at all. Cross-service shared mutable
 state and persistent attacker changes are future capabilities.
 
+### Profile-scoped SSH authentication
+
+Schema version 2 SSH profiles may declare `ssh_auth` for a typed, deterministic
+authentication policy. The initial supported `kind` is `musl-star-bypass`, used
+by the bundled `sshhole-2026-123158` profile. Each account declares a virtual
+shadow marker (`*`, `!`, `$5$`, or `$6$`), numeric UID, absolute virtual shell,
+and a fixture password only for hash-bearing accounts. The policy also declares
+`password_authentication`, `use_pam`, `patched`, and `permit_root_login`.
+For an unpatched, no-PAM profile with password authentication enabled and at
+least one password-bearing account, a `*` account with a usable shell accepts
+257–1024 UTF-8 password bytes. `!`, unknown users, and `nologin`/`false`
+shells reject. Root accepts passwords only when `permit_root_login: yes`.
+The runtime never reads a real shadow database or passes a password to a model.
+
+The policy is selected per profile and does not change legacy SSH listener
+`accounts` behavior for other profiles. For an SSH listener using this profile,
+`ssh_auth` supplies its account behavior; listener `accounts` do not override it.
+The policy is held fixed for the deployment lifetime. A composed profile must
+share its base's auth policy exactly; incompatible policies fail validation.
+The public fixture password in a bundled deception is a simulated credential,
+not an operator secret. Provider credentials still belong in deployment settings.
+
 ## SSH model replies
 
 The profile setting `ssh_response_format` defaults to `text` for compatibility.
@@ -176,16 +203,19 @@ trimming that history can lose those effects.
 
 Exec channels expose stdout and stderr independently. Interactive channels display
 stdout followed by stderr before the prompt; arbitrary interleaving of the two
-streams is not represented. The adapter does not append newlines or emulate PTY
-line discipline. Unsupported/malformed replies end the session with a sanitized
+streams is not represented. A requested PTY applies CRLF output translation,
+terminal echo and basic Enter/Backspace handling; full PTY line discipline is not
+represented. Unsupported/malformed replies end the session with a sanitized
 failure. Existing deterministic CVE response wording and stream placement are
 unchanged.
 
 ## Private virtual file commands
 
-The opt-in `virtual_files` behavior runs before `identity` in `linux-ssh` version
-3. Its only option, `directories`, lists normalized absolute virtual directories,
+The opt-in `virtual_files` behavior runs before `identity` in bundled Linux SSH
+profiles. The `directories` option lists normalized absolute virtual directories,
 such as `/tmp` and `/var/tmp`. Baseline files still come from `profile.files`.
+An optional `listing_time` supplies one stable ls-style display date for the
+profile's virtual listings; it does not implement per-file timestamps.
 Reads, listings, current directory and supported writes share one connection's
 private view; another connection starts from the unchanged baseline. Generative
 fallback receives that current view too.
@@ -200,8 +230,15 @@ emulation. Missing-file/directory diagnostics use stderr.
 
 Each session permits at most 128 overlay/deletion/directory entries and 64 KiB of
 overlay content. Capacity failures leave the previous view intact. End-of-session
-cleanup discards the view. This behavior is not enabled on the reference CVE
-profiles, whose agreed wording and stream placement remain unchanged.
+cleanup discards the view. The sudo and sshhole profiles include it for surrounding
+host exploration; their agreed vulnerability handlers still take precedence.
+
+`fallback: llm_if_available` keeps deterministic startup when no provider is
+configured and uses checked model replies for otherwise unhandled commands when
+the listener explicitly selects a provider. The fallback does not promise full
+shell or device emulation. Real OpenSSH terminal journeys in
+`tests/fixtures/ssh_journeys.yaml` exercise every bundled SSH profile using each
+profile's own authentication, prompt and command expectations.
 
 ## Reference vulnerability behaviors
 

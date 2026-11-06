@@ -1,0 +1,44 @@
+schema_version: 1
+id: workbench-http-cmd
+version: '1'
+cases:
+- id: status
+  steps:
+  - path: /api/demo/status
+    expect:
+      status: 200
+      contains: '"ready":true'
+- id: route-capture
+  group: held_out
+  steps:
+  - path: /api/demo/jobs/build-42
+    expect:
+      json_value:
+        id: build-42
+        status: queued
+- id: program
+  steps:
+  - method: POST
+    path: /api/demo/command
+    body: '{"command": "workbench status"}'
+    expect:
+      contains: 'workbench-01: ready'
+- id: negative-input
+  steps:
+  - method: POST
+    path: /api/demo/command
+    body: '{}'
+    expect:
+      status: 400
+- id: program-negative
+  steps:
+  - method: POST
+    path: /api/demo/command
+    body: '{"command": "workbench unknown"}'
+    expect:
+      contains: '"exit_status": 1'
+- id: missing-route
+  steps:
+  - path: /missing
+    expect:
+      status: 404

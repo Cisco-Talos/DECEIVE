@@ -147,10 +147,18 @@ def prepare(spec_path: Path, run: Path, root: Path) -> dict:
              "spec": spec.model_dump(mode="json"), "baseline": source, "phase": "prepared",
              "loops": [], "current": None, "containers": {}, "stop_reason": None,
              "native_agent_usage": None}
+    state['assessment_definition_id'] = spec_identity(state['spec'])
     from deceive.assessment.models import AssessmentRun
     AssessmentRun.model_validate(state)
     write_json(run / "state.json", state)
     return state
+
+
+def spec_identity(spec: dict) -> str:
+    """Only the explicit resume loop-count extension may change a prepared spec."""
+    value = Spec.model_validate(spec).model_dump(mode='json')
+    value['policy'].pop('max_loops')
+    return fingerprint(value)
 
 
 def profile_path(reference: str, base: Path | None = None) -> Path:
@@ -164,11 +172,11 @@ def profile_path(reference: str, base: Path | None = None) -> Path:
 
 
 def stage_profile(reference: str, stage: Path, *, base: Path | None = None,
-                  seen: tuple[Path, ...] = ()) -> str:
+                  seen: tuple[Path, ...] = (), profile=None) -> str:
     path = profile_path(reference, base)
     if path in seen or len(seen) > 10:
         raise ValueError("Cyclic/deep profile dependencies")
-    raw = read_yaml(path)
+    raw = profile.model_dump(mode='json', exclude_unset=True) if profile is not None else read_yaml(path)
     identity = raw.get("id", "")
     if not re.fullmatch(r"[a-z][a-z0-9_-]{0,127}", identity):
         raise ValueError(f"Assessment requires a safe readable profile id: {path.name}")
@@ -188,7 +196,8 @@ def stage_profile(reference: str, stage: Path, *, base: Path | None = None,
     requirements = raw.get("requirements") or {}
     if requirements.get("base_profile"):
         requirements["base_profile"] = stage_profile(requirements["base_profile"], stage,
-            base=path.parent, seen=seen + (path,))
+            base=path.parent, seen=seen + (path,),
+            profile=profile._bound_base if profile is not None else None)
     name = "profile-" + fingerprint(raw)[:20] + ".yaml"
     output = stage / name
     output.write_text(json.dumps(raw, indent=2))

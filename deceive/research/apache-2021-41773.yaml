@@ -1,0 +1,181 @@
+schema_version: 1
+profile_id: apache-2021-41773
+version: '1'
+subject: Bounded apache-2021-41773 product/platform behavior
+kind: real_product
+sources:
+- id: authored-design
+  kind: design
+  title: apache-2021-41773
+  url: null
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - Profile-defined identities, application paths and payloads are authored requirements,
+    not external realism evidence.
+  limitations: []
+- id: http-semantics
+  kind: standard
+  title: HTTP Semantics, RFC 9110
+  url: https://www.rfc-editor.org/rfc/rfc9110.html
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - HEAD carries no response content; representation metadata must remain meaningful.
+    Status, method and media type have distinct semantics.
+  limitations: []
+- id: apache-advisory
+  kind: vendor
+  title: Apache HTTP Server security advisory
+  url: https://httpd.apache.org/security/vulnerabilities_24.html#CVE-2021-41773
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - 2.4.49 normalization permits Alias traversal when access protection is absent;
+    CGI execution additionally depends on configuration.
+  limitations:
+  - 2.4.50 incomplete-fix CVE-2021-42013 is separate; this profile excludes it.
+- id: apache-alias
+  kind: vendor
+  title: Apache mod_alias documentation
+  url: https://httpd.apache.org/docs/2.4/mod/mod_alias.html
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - Alias maps URL space outside DocumentRoot; access control and mapped prefix influence
+    traversal reachability.
+  limitations: []
+- id: apache-core
+  kind: vendor
+  title: Apache core ServerTokens and ServerSignature
+  url: https://httpd.apache.org/docs/2.4/mod/core.html
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - ServerTokens controls product/version disclosure; ServerSignature defaults off
+    and error documents can be configured.
+  limitations:
+  - 'Plain errors alone are not proof of impossibility: ErrorDocument customization
+    exists.'
+- id: apache-patch
+  kind: patch
+  title: Apache normalization fix
+  url: https://github.com/apache/httpd/commit/e150697086e70c552b2588f369f2d17815cb1782
+  retrieved: '2026-11-04'
+  revision: e150697086e70c552b2588f369f2d17815cb1782
+  facts:
+  - The fix normalizes a second encoded dot, demonstrating why mixed literal/encoded
+    dot segments matter.
+  limitations: []
+- id: apache-nuclei
+  kind: detection
+  title: ProjectDiscovery Apache traversal detection template
+  url: https://github.com/projectdiscovery/nuclei-templates/blob/main/http/cves/2021/CVE-2021-41773.yaml
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - Template variants target icons and cgi-bin aliases and check root-account content;
+    a separate CGI branch attempts execution.
+  limitations:
+  - Mutable main inspected 2026-11-04; no scanner or exploit executed. An LFI regex
+    match is not comprehensive realism.
+- id: apache-poc
+  kind: poc
+  title: blasty Apache CVE playground
+  url: https://github.com/blasty/CVE-2021-41773
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - Public repository provides a traversal/execution exploration reference.
+  limitations:
+  - Repository inspected as text only; no scripts executed and no genuine service
+    capture collected.
+criteria:
+- id: http-fidelity
+  roles:
+  - protocol
+  - product
+  - attacker
+  - consistency
+  sources:
+  - http-semantics
+  expectation: Representation bytes, headers, errors and completion remain credible
+    across claimed HTTP versions.
+  comparisons:
+  - Compare GET/HEAD on a representative resource, a negative request, media type
+    and length; substantive workflow on each advertised version.
+  limitations: []
+- id: apache-traversal
+  roles:
+  - protocol
+  - product
+  - attacker
+  - consistency
+  sources:
+  - apache-advisory
+  - apache-alias
+  - apache-patch
+  - apache-nuclei
+  - apache-poc
+  expectation: A permitted Alias traversal exposes only the intended virtual surface
+    with believable prerequisites and follow-up observations.
+  comparisons:
+  - Compare ordinary aliased file, single-encoded traversal, uppercase encoding/query
+    and undeclared file; inspect detector variants as text, label icons alias and
+    CGI execution coverage honestly.
+  limitations:
+  - Only configured cgi-bin alias and declared virtual files; icons alias is not claimed.
+    Protected variant acceptance is separate from live target probing.
+- id: apache-presentation
+  roles:
+  - protocol
+  - product
+  - attacker
+  - consistency
+  sources:
+  - apache-core
+  - http-semantics
+  expectation: Product/version, media types, HEAD and ordinary/error responses form
+    a plausible Apache configuration.
+  comparisons:
+  - Compare Server header on landing, traversal and errors; compare GET and HEAD representation
+    metadata.
+  limitations:
+  - No exact wire fingerprint, default error-page claim or complete Apache module
+    emulation.
+- id: scope-coherence
+  roles:
+  - protocol
+  - product
+  - attacker
+  - consistency
+  sources:
+  - authored-design
+  - http-semantics
+  - apache-advisory
+  - apache-alias
+  - apache-core
+  - apache-patch
+  - apache-nuclei
+  - apache-poc
+  expectation: Representative supported and nearby challenge interactions maintain
+    the researched platform/protocol conventions and consistent authored identity.
+  comparisons:
+  - Choose variations beyond the supplied examples; distinguish an impossible in-scope
+    result from a documented exclusion; identify material unknowns instead of awarding
+    maximum by default.
+  limitations:
+  - Authored application status and custom workbench command output establish functional
+    conformance only.
+unknowns:
+- No complete real-system equivalence claim. Material unsampled facets must remain
+  unassessed.
+- Research does not independently verify every distribution patch/build identity or
+  every configuration.
+search_notes:
+- Primary protocol/platform sources read as documentation; no live vulnerable reference
+  software, downloaded PoCs or scanners executed.
+- No genuine counterpart packet/session captures collected; documented behavior and
+  bounded plausibility are the available comparison basis.
+- Reviewed vendor advisory/module docs, immutable normalization patch, public PoC
+  repository and Nuclei template. No new alias/RCE/CVE scope is inferred.

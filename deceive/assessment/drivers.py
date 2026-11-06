@@ -44,8 +44,22 @@ class SSHDriver:
                 session["connection"].close()
                 await session["connection"].wait_closed()
             return {"version": "ssh", "facts": {"closed": True}}
+        if action.operation == "authenticate":
+            p = action.parameters
+            password = p.get("password", endpoint.get("password", ""))
+            if not isinstance(password, str) or len(password.encode()) > 4096:
+                raise ValueError("SSH authentication password exceeds 4096 bytes")
+            try:
+                async with asyncssh.connect("127.0.0.1", port=endpoint["ports"]["tcp"]["host"],
+                    username=p.get("username", endpoint.get("username", "guest")),
+                    password=password, known_hosts=None, preferred_auth="password",
+                    client_keys=[]):
+                    authenticated = True
+            except asyncssh.PermissionDenied:
+                authenticated = False
+            return {"version": "ssh", "facts": {"authenticated": authenticated}}
         if action.operation not in {"exec", "commands"}:
-            raise ValueError("SSH operations: exec, commands, close")
+            raise ValueError("SSH operations: authenticate, exec, commands, close")
         p = action.parameters
         commands = p.get("commands", [p.get("command", "hostname")])
         if not isinstance(commands, list) or not 1 <= len(commands) <= 30 or not all(

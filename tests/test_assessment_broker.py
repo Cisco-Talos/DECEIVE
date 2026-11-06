@@ -14,6 +14,7 @@ async def test_broker_persists_budget_deadline_and_attribution(tmp_path):
     directory = tmp_path / "loop"
     directory.mkdir()
     write_json(tmp_path / "state.json", {"spec": {
+        "schema_version": 1,
         "targets": [{"name": "web", "profiles": ["demo-http"]}],
         "limits": {"per_role_target": 1}}, "started_epoch": time.time(), "current": {
         "directory": "loop", "candidate_id": "candidate", "targets": {"target-01": {

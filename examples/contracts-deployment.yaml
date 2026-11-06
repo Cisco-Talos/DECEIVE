@@ -1,0 +1,22 @@
+schema_version: 2
+organization: ./organization.yaml
+data_dir: ../.deceive/contracts
+listeners:
+  - name: linux
+    protocol: https
+    host: 127.0.0.1
+    port: 8443
+    versions: ['1.1', '2', '3']
+    profile:
+      profile: workbench-http-linux
+      id: acme-linux
+      parameters: {hostname: ops-node-01}
+  - name: windows
+    protocol: https
+    host: 127.0.0.1
+    port: 9443
+    versions: ['1.1', '2', '3']
+    profile:
+      profile: workbench-http-ps7
+      id: acme-windows
+      parameters: {hostname: ops-node-02}

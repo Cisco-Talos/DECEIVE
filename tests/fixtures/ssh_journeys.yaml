@@ -1,0 +1,54 @@
+schema_version: 1
+# Raw terminal actions and expected observations are profile-specific. The runner
+# does not assume Unix commands, paths, prompts or authentication methods.
+journeys:
+  - profile: sudo-2019-14287
+    username: guest
+    prompt: 'guest@build-node-03:~$ '
+    banner_contains: ['Debian GNU/Linux 10 (buster)', 'Authorized access only.']
+    steps:
+      - send: "pwd\r"
+        contains: ['/home/guest']
+      - send: "ls -la\r"
+        contains: ['.bashrc', 'README.txt', 'builds']
+        excludes: ['command not found']
+      - send: "cat /etc/os-release\r"
+        contains: ['VERSION_ID=10', 'ID=debian']
+      - send: "sudo -l\r"
+        contains: ['(ALL, !root) NOPASSWD: /usr/bin/id']
+      - send: "sudo -u#-1 id\r"
+        contains: ['uid=0(root)']
+      - send: "id\r"
+        contains: ['uid=1000(guest)']
+
+  - profile: linux-ssh
+    username: guest
+    fake_provider: true
+    prompt: 'guest@build-node-03:~$ '
+    banner_contains: ['Ubuntu 22.04.5 LTS', 'Authorized access only.']
+    steps:
+      - send: "pwd\r"
+        contains: ['/home/guest']
+      - send: "ls -la\r"
+        contains: ['README.txt']
+        excludes: ['command not found']
+      - send: "cat /etc/os-release\r"
+        contains: ['PRETTY_NAME="Ubuntu 22.04.5 LTS"']
+      - send: "uname -r\r"
+        contains: ['5.15.0-130-generic']
+
+  - profile: sshhole-2026-123158
+    username: deploy
+    password: {repeat: A, count: 300}
+    prompt: 'deploy@edge-build-07:~$ '
+    banner_contains: ['Alpine Linux 3.24.3', 'Authorized access only.']
+    steps:
+      - send: "whoami\r"
+        contains: ['deploy']
+      - send: "ls -la\r"
+        contains: ['.profile', 'README.txt']
+        excludes: ['command not found']
+      - send: "cat /etc/alpine-release\r"
+        contains: ['3.24.3']
+      - send: "cat /etc/shadow\r"
+        contains: ['Permission denied']

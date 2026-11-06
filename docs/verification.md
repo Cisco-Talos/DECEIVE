@@ -1,5 +1,10 @@
 # Verification
 
+This history retains original v1/v2 reports and measurements. Their numeric
+scores cannot qualify current realism quality. Use the [evidence-v3 workflow](assessment.md)
+with frozen coverage and major/subtle reviewer controls for a new signoff;
+technical test evidence below remains separately useful.
+
 Implementation is on `codex/deception-profiles`, based on updated `dev` at
 `cce98f3`. Local `main` and `dev` were fast-forwarded before implementation.
 `codex/protocol-registry` remains at `2647132` as reference. This document records

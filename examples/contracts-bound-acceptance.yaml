@@ -1,0 +1,25 @@
+schema_version: 1
+id: workbench-acme
+version: '1'
+cases:
+  - id: organization
+    steps:
+      - path: /api/acme/status
+        expect: {status: 200, contains: Acme Research}
+  - id: command
+    steps:
+      - method: POST
+        path: /api/acme/command
+        body: '{"command":"workbench status"}'
+        expect: {status: 200, contains: 'ready\n'}
+  - id: malformed
+    steps:
+      - method: POST
+        path: /api/acme/command
+        body: '{}'
+        expect: {status: 400}
+  - id: capture
+    group: held_out
+    steps:
+      - path: /api/acme/jobs/check-42
+        expect: {json_value: {id: check-42, status: queued}}

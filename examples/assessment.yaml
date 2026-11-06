@@ -1,5 +1,6 @@
 schema_version: 1
-# Assessment specification, not production deployment YAML.
+# Legacy technical diagnostic example; cannot qualify modern realism.
+# Use assessment-research.yaml for research-backed qualification; v3 remains diagnostic only.
 review_rubric: evidence-v2
 policy:
   mode: until

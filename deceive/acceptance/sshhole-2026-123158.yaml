@@ -1,0 +1,656 @@
+schema_version: 1
+id: sshhole-2026-123158
+version: '1'
+references:
+- https://github.com/CVEProject/cvelistV5/blob/main/cves/2026/123xxx/CVE-2026-123158.json
+- https://sshhole.com/
+- https://www.alpinelinux.org/posts/2026-11-05-openssh-password-authentication-bypass/
+- https://www.openssh.org/releasenotes.html#10.6p2
+cases:
+- id: deploy-256-rejected
+  username: deploy
+  password: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+  steps:
+  - expect:
+      authenticated: false
+- id: deploy-257-shell
+  username: deploy
+  password: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+  steps:
+  - command: whoami
+    expect:
+      body: 'deploy
+
+        '
+  - command: id -u
+    expect:
+      body: '1001
+
+        '
+  - command: cat /etc/os-release
+    expect:
+      contains: VERSION_ID=3.24.3
+- id: backup-300-shell
+  username: backup
+  password: BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+  steps:
+  - command: whoami
+    expect:
+      body: 'backup
+
+        '
+  - command: id -u
+    expect:
+      body: '1002
+
+        '
+  - command: pwd
+    expect:
+      body: '/home/backup
+
+        '
+- id: deploy-1025-rejected
+  username: deploy
+  password: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+  steps:
+  - expect:
+      authenticated: false
+- id: root-default-protected
+  username: root
+  password: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+  steps:
+  - expect:
+      authenticated: false
+- id: daemon-nologin-protected
+  username: daemon
+  password: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+  steps:
+  - expect:
+      authenticated: false
+- id: unknown-user-rejected
+  username: intruder
+  password: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+  steps:
+  - expect:
+      authenticated: false
+- id: admin-wrong-rejected
+  username: admin
+  password: wrong
+  steps:
+  - expect:
+      authenticated: false
+- id: admin-normal-password
+  username: admin
+  password: fixture-admin-secret
+  steps:
+  - command: whoami
+    expect:
+      body: 'admin
+
+        '
+  - command: id -u
+    expect:
+      body: '1000
+
+        '
+- id: patched-package
+  username: deploy
+  password: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+  steps:
+  - expect:
+      authenticated: false
+  overrides:
+    ssh_auth:
+      kind: musl-star-bypass
+      accounts:
+        root:
+          shadow: '*'
+          uid: 0
+          shell: /bin/ash
+          password: null
+        admin:
+          shadow: $6$
+          uid: 1000
+          shell: /bin/ash
+          password: fixture-admin-secret
+        deploy:
+          shadow: '*'
+          uid: 1001
+          shell: /bin/ash
+          password: null
+        backup:
+          shadow: '*'
+          uid: 1002
+          shell: /bin/ash
+          password: null
+        daemon:
+          shadow: '*'
+          uid: 2
+          shell: /sbin/nologin
+          password: null
+      password_authentication: true
+      use_pam: false
+      patched: true
+      permit_root_login: prohibit-password
+    behaviors:
+    - id: package-version
+      kind: rule
+      match:
+        command: apk info -v openssh
+        command_regex: null
+        path: null
+        method: null
+        headers: {}
+        body_contains: null
+        state: {}
+      reply:
+        body: 'openssh-10.3_p1-r2
+
+          '
+        body_base64: null
+        body_file: null
+        status: 200
+        headers: []
+        close: false
+        exit_status: 0
+        stderr: ''
+        stderr_base64: null
+        body_json: null
+      transition: {}
+      options: {}
+    - id: shadow-protected
+      kind: rule
+      match:
+        command: cat /etc/shadow
+        command_regex: null
+        path: null
+        method: null
+        headers: {}
+        body_contains: null
+        state: {}
+      reply:
+        body: 'cat: can''t open ''/etc/shadow'': Permission denied
+
+          '
+        body_base64: null
+        body_file: null
+        status: 200
+        headers: []
+        close: false
+        exit_status: 1
+        stderr: ''
+        stderr_base64: null
+        body_json: null
+      transition: {}
+      options: {}
+    - id: identity
+      kind: identity
+      match:
+        command: null
+        command_regex: null
+        path: null
+        method: null
+        headers: {}
+        body_contains: null
+        state: {}
+      reply:
+        body: ''
+        body_base64: null
+        body_file: null
+        status: 200
+        headers: []
+        close: false
+        exit_status: 0
+        stderr: ''
+        stderr_base64: null
+        body_json: null
+      transition: {}
+      options: {}
+- id: pam-enabled
+  username: deploy
+  password: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+  steps:
+  - expect:
+      authenticated: false
+  overrides:
+    ssh_auth:
+      kind: musl-star-bypass
+      accounts:
+        root:
+          shadow: '*'
+          uid: 0
+          shell: /bin/ash
+          password: null
+        admin:
+          shadow: $6$
+          uid: 1000
+          shell: /bin/ash
+          password: fixture-admin-secret
+        deploy:
+          shadow: '*'
+          uid: 1001
+          shell: /bin/ash
+          password: null
+        backup:
+          shadow: '*'
+          uid: 1002
+          shell: /bin/ash
+          password: null
+        daemon:
+          shadow: '*'
+          uid: 2
+          shell: /sbin/nologin
+          password: null
+      password_authentication: true
+      use_pam: true
+      patched: false
+      permit_root_login: prohibit-password
+    files:
+      /etc/hostname: 'edge-build-07
+
+        '
+      /etc/os-release: 'NAME="Alpine Linux"
+
+        ID=alpine
+
+        VERSION_ID=3.24.3
+
+        PRETTY_NAME="Alpine Linux v3.24.3"
+
+        '
+      /etc/passwd: 'root:x:0:0:root:/root:/bin/ash
+
+        admin:x:1000:1000:Administrator:/home/admin:/bin/ash
+
+        deploy:x:1001:1001:Deployment:/home/deploy:/bin/ash
+
+        backup:x:1002:1002:Backup:/home/backup:/bin/ash
+
+        daemon:x:2:2:Daemon:/sbin:/sbin/nologin
+
+        '
+      /etc/ssh/sshd_config: 'PasswordAuthentication yes
+
+        PermitRootLogin prohibit-password
+
+        UsePAM yes
+
+        '
+- id: password-auth-disabled
+  username: deploy
+  password: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+  steps:
+  - expect:
+      authenticated: false
+  overrides:
+    ssh_auth:
+      kind: musl-star-bypass
+      accounts:
+        root:
+          shadow: '*'
+          uid: 0
+          shell: /bin/ash
+          password: null
+        admin:
+          shadow: $6$
+          uid: 1000
+          shell: /bin/ash
+          password: fixture-admin-secret
+        deploy:
+          shadow: '*'
+          uid: 1001
+          shell: /bin/ash
+          password: null
+        backup:
+          shadow: '*'
+          uid: 1002
+          shell: /bin/ash
+          password: null
+        daemon:
+          shadow: '*'
+          uid: 2
+          shell: /sbin/nologin
+          password: null
+      password_authentication: false
+      use_pam: false
+      patched: false
+      permit_root_login: prohibit-password
+    files:
+      /etc/hostname: 'edge-build-07
+
+        '
+      /etc/os-release: 'NAME="Alpine Linux"
+
+        ID=alpine
+
+        VERSION_ID=3.24.3
+
+        PRETTY_NAME="Alpine Linux v3.24.3"
+
+        '
+      /etc/passwd: 'root:x:0:0:root:/root:/bin/ash
+
+        admin:x:1000:1000:Administrator:/home/admin:/bin/ash
+
+        deploy:x:1001:1001:Deployment:/home/deploy:/bin/ash
+
+        backup:x:1002:1002:Backup:/home/backup:/bin/ash
+
+        daemon:x:2:2:Daemon:/sbin:/sbin/nologin
+
+        '
+      /etc/ssh/sshd_config: 'PasswordAuthentication no
+
+        PermitRootLogin prohibit-password
+
+        '
+- id: no-salt-donor
+  username: deploy
+  password: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+  steps:
+  - expect:
+      authenticated: false
+  overrides:
+    ssh_auth:
+      kind: musl-star-bypass
+      accounts:
+        root:
+          shadow: '*'
+          uid: 0
+          shell: /bin/ash
+          password: null
+        deploy:
+          shadow: '*'
+          uid: 1001
+          shell: /bin/ash
+          password: null
+        backup:
+          shadow: '*'
+          uid: 1002
+          shell: /bin/ash
+          password: null
+        daemon:
+          shadow: '*'
+          uid: 2
+          shell: /sbin/nologin
+          password: null
+      password_authentication: true
+      use_pam: false
+      patched: false
+      permit_root_login: prohibit-password
+    files:
+      /etc/hostname: 'edge-build-07
+
+        '
+      /etc/os-release: 'NAME="Alpine Linux"
+
+        ID=alpine
+
+        VERSION_ID=3.24.3
+
+        PRETTY_NAME="Alpine Linux v3.24.3"
+
+        '
+      /etc/passwd: 'root:x:0:0:root:/root:/bin/ash
+
+        deploy:x:1001:1001:Deployment:/home/deploy:/bin/ash
+
+        backup:x:1002:1002:Backup:/home/backup:/bin/ash
+
+        daemon:x:2:2:Daemon:/sbin:/sbin/nologin
+
+        '
+      /etc/ssh/sshd_config: 'PasswordAuthentication yes
+
+        PermitRootLogin prohibit-password
+
+        '
+- id: deploy-locked
+  username: deploy
+  password: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+  steps:
+  - expect:
+      authenticated: false
+  overrides:
+    ssh_auth:
+      kind: musl-star-bypass
+      accounts:
+        root:
+          shadow: '*'
+          uid: 0
+          shell: /bin/ash
+          password: null
+        admin:
+          shadow: $6$
+          uid: 1000
+          shell: /bin/ash
+          password: fixture-admin-secret
+        deploy:
+          shadow: '!'
+          uid: 1001
+          shell: /bin/ash
+          password: null
+        backup:
+          shadow: '*'
+          uid: 1002
+          shell: /bin/ash
+          password: null
+        daemon:
+          shadow: '*'
+          uid: 2
+          shell: /sbin/nologin
+          password: null
+      password_authentication: true
+      use_pam: false
+      patched: false
+      permit_root_login: prohibit-password
+- id: root-enabled-variant
+  username: root
+  password: RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR
+  steps:
+  - command: whoami
+    expect:
+      body: 'root
+
+        '
+  - command: id -u
+    expect:
+      body: '0
+
+        '
+  - command: cat /etc/ssh/sshd_config
+    expect:
+      contains: PermitRootLogin yes
+  overrides:
+    ssh_auth:
+      kind: musl-star-bypass
+      accounts:
+        root:
+          shadow: '*'
+          uid: 0
+          shell: /bin/ash
+          password: null
+        admin:
+          shadow: $6$
+          uid: 1000
+          shell: /bin/ash
+          password: fixture-admin-secret
+        deploy:
+          shadow: '*'
+          uid: 1001
+          shell: /bin/ash
+          password: null
+        backup:
+          shadow: '*'
+          uid: 1002
+          shell: /bin/ash
+          password: null
+        daemon:
+          shadow: '*'
+          uid: 2
+          shell: /sbin/nologin
+          password: null
+      password_authentication: true
+      use_pam: false
+      patched: false
+      permit_root_login: 'yes'
+    files:
+      /etc/hostname: 'edge-build-07
+
+        '
+      /etc/os-release: 'NAME="Alpine Linux"
+
+        ID=alpine
+
+        VERSION_ID=3.24.3
+
+        PRETTY_NAME="Alpine Linux v3.24.3"
+
+        '
+      /etc/passwd: 'root:x:0:0:root:/root:/bin/ash
+
+        admin:x:1000:1000:Administrator:/home/admin:/bin/ash
+
+        deploy:x:1001:1001:Deployment:/home/deploy:/bin/ash
+
+        backup:x:1002:1002:Backup:/home/backup:/bin/ash
+
+        daemon:x:2:2:Daemon:/sbin:/sbin/nologin
+
+        '
+      /etc/ssh/sshd_config: 'PasswordAuthentication yes
+
+        PermitRootLogin yes
+
+        '
+- id: backup-held-out-1024
+  username: backup
+  password: zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz
+  steps:
+  - command: id
+    expect:
+      contains: uid=1002(backup)
+  group: held_out
+- id: deploy-held-out-short
+  username: deploy
+  password: zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz
+  steps:
+  - expect:
+      authenticated: false
+  group: held_out
+- id: patched-package-visible
+  username: admin
+  password: fixture-admin-secret
+  steps:
+  - command: apk info -v openssh
+    expect:
+      body: 'openssh-10.3_p1-r2
+
+        '
+  overrides:
+    ssh_auth:
+      kind: musl-star-bypass
+      accounts:
+        root:
+          shadow: '*'
+          uid: 0
+          shell: /bin/ash
+          password: null
+        admin:
+          shadow: $6$
+          uid: 1000
+          shell: /bin/ash
+          password: fixture-admin-secret
+        deploy:
+          shadow: '*'
+          uid: 1001
+          shell: /bin/ash
+          password: null
+        backup:
+          shadow: '*'
+          uid: 1002
+          shell: /bin/ash
+          password: null
+        daemon:
+          shadow: '*'
+          uid: 2
+          shell: /sbin/nologin
+          password: null
+      password_authentication: true
+      use_pam: false
+      patched: true
+      permit_root_login: prohibit-password
+    behaviors:
+    - id: package-version
+      kind: rule
+      match:
+        command: apk info -v openssh
+        command_regex: null
+        path: null
+        method: null
+        headers: {}
+        body_contains: null
+        state: {}
+      reply:
+        body: 'openssh-10.3_p1-r2
+
+          '
+        body_base64: null
+        body_file: null
+        status: 200
+        headers: []
+        close: false
+        exit_status: 0
+        stderr: ''
+        stderr_base64: null
+        body_json: null
+      transition: {}
+      options: {}
+    - id: shadow-protected
+      kind: rule
+      match:
+        command: cat /etc/shadow
+        command_regex: null
+        path: null
+        method: null
+        headers: {}
+        body_contains: null
+        state: {}
+      reply:
+        body: 'cat: can''t open ''/etc/shadow'': Permission denied
+
+          '
+        body_base64: null
+        body_file: null
+        status: 200
+        headers: []
+        close: false
+        exit_status: 1
+        stderr: ''
+        stderr_base64: null
+        body_json: null
+      transition: {}
+      options: {}
+    - id: identity
+      kind: identity
+      match:
+        command: null
+        command_regex: null
+        path: null
+        method: null
+        headers: {}
+        body_contains: null
+        state: {}
+      reply:
+        body: ''
+        body_base64: null
+        body_file: null
+        status: 200
+        headers: []
+        close: false
+        exit_status: 0
+        stderr: ''
+        stderr_base64: null
+        body_json: null
+      transition: {}
+      options: {}

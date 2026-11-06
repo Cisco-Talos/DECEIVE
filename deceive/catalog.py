@@ -50,15 +50,20 @@ def profiles(directories: Sequence[Path] = ()) -> list[dict]:
     return [found[name] for name in sorted(found)]
 
 
-def show(reference: str, directories: Sequence[Path] = ()) -> dict:
+def show(reference: str, directories: Sequence[Path] = (), *, organization: Path | None = None) -> dict:
     if not Path(reference).is_file():
         matches = [row for row in profiles(directories) if row["id"] == reference]
         if not matches:
             raise ValueError(f"Profile not found in catalog: {reference}")
         reference = matches[0]["reference"]
-    profile = load_profile(reference)
+    profile = load_profile(reference, organization=organization)
     effective, _ = _compose([profile])
     return entry(reference, profile) | {
         "definition": profile.model_dump(mode="json", exclude_unset=True),
         "effective_identity": effective.identity.model_dump(mode="json"),
+        "instance_id": profile.instance_id or profile.id,
+        "organization_id": profile.organization_id,
+        "parameters": {k: {'definition': v.model_dump(), 'value': profile.resolved_parameters.get(k),
+                           'origin': profile.parameter_origins.get(k)} for k, v in profile.parameters.items()},
+        "contracts": [c.model_dump(mode='json') for c in effective.contracts],
         "effective_files": effective.files}

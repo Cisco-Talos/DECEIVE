@@ -1,0 +1,126 @@
+schema_version: 1
+profile_id: sshhole-2026-123158
+version: '1'
+subject: OpenSSH musl password authentication bypass on a generic Alpine host
+kind: real_product
+sources:
+  - id: researcher-disclosure
+    kind: disclosure
+    title: Original researcher write-up
+    url: https://sshhole.com/
+    retrieved: '2026-11-05'
+    revision: null
+    facts:
+      - A musl, no-PAM OpenSSH host with password authentication, a target account
+        with a literal * shadow field, and another account with a real password
+        hash accepts arbitrary 257-to-1024-byte passwords for that target.
+      - The other account's hash supplies a salt for the failed crypt operation;
+        musl returns * and the comparison can match the target's field.
+    limitations:
+      - Researcher write-up is not a complete SSH packet fingerprint or shell transcript.
+  - id: researcher-repro
+    kind: disclosure
+    title: Researcher's reproduction repository
+    url: https://github.com/oz9un/sshole
+    retrieved: '2026-11-05'
+    revision: main as reviewed 2026-11-05
+    facts:
+      - The published reproduction uses Alpine 3.24, one star-password account
+        and one real-password account; it demonstrates 256-byte rejection and
+        257-byte success.
+    limitations:
+      - Reproduction scripts were reviewed as text and were not run or copied.
+  - id: alpine-advisory
+    kind: vendor
+    title: Alpine Linux security advisory for openssh-server password bypass
+    url: https://www.alpinelinux.org/posts/2026-11-05-openssh-password-authentication-bypass/
+    retrieved: '2026-11-05'
+    revision: '2026-11-05'
+    facts:
+      - Alpine 3.24.4 includes fixed openssh-10.3_p1-r2; earlier package builds
+        on the 3.24 branch are affected when the stated account/config conditions hold.
+      - Default PermitRootLogin prohibit-password protects root password login.
+      - PAM, disabled password authentication, a !-locked target, or absence of a
+        real password hash defeats the bypass.
+      - Official tiny-cloud images have an alpine account with * and passwordless
+        doas, but the proposed DECEIVE profile does not claim to emulate that image.
+    limitations:
+      - Advisory stated no CVE was assigned at its writing time; a record was
+        published later on the same day.
+  - id: openssh-fix
+    kind: vendor
+    title: OpenSSH 10.6p2 release notes
+    url: https://www.openssh.org/releasenotes.html#10.6p2
+    retrieved: '2026-11-05'
+    revision: 10.6p2
+    facts:
+      - OpenSSH 10.6p2 contains a critical workaround for a password-authentication
+        bypass on musl Linux with PAM disabled.
+    limitations: []
+  - id: cve-record
+    kind: standard
+    title: Official CVE Program record CVE-2026-123158
+    url: https://github.com/CVEProject/cvelistV5/blob/main/cves/2026/123xxx/CVE-2026-123158.json
+    retrieved: '2026-11-05'
+    revision: published 2026-11-05
+    facts:
+      - MITRE published CVE-2026-123158 for OpenSSH before 10.6p2 on Linux with
+        musl and PAM disabled.
+    limitations:
+      - CVE description says 256-to-1024 characters; vendor and researcher sources
+        give the byte-level boundary as 257-to-1024 bytes. Boundary tests use ASCII.
+  - id: authored-design
+    kind: design
+    title: Proposed DECEIVE generic Alpine fixture
+    url: null
+    retrieved: '2026-11-05'
+    revision: proposal 1
+    facts:
+      - Hostname, deploy/backup/admin names and IDs, admin's fixture password,
+        and the selected command subset
+        are authored profile choices, not observations from a real system.
+    limitations: []
+criteria:
+  - id: ssh-auth-boundary
+    roles: [protocol, product, attacker, consistency]
+    sources: [researcher-disclosure, researcher-repro, alpine-advisory]
+    expectation: A real SSH password-auth exchange enforces the documented
+      prerequisite-dependent byte boundary and yields a usable target-account channel only
+      for qualifying long passwords.
+    comparisons:
+      - Probe deploy and backup at 256, 257, 300, 1024, and 1025 ASCII bytes;
+        compare admin, default/protected root, unknown users, and patched variants.
+    limitations:
+      - Transport algorithms and timing are not an exact OpenSSH clone.
+  - id: alpine-system-coherence
+    roles: [product, attacker, consistency]
+    sources: [alpine-advisory, researcher-repro, authored-design]
+    expectation: After successful login, advertised Alpine/OpenSSH version,
+      account, OS, prompt, baseline files, and normal command outputs agree.
+    comparisons:
+      - Compare banner, whoami, id, pwd, os-release and package/config facts
+        across exec and interactive channels and separate sessions.
+    limitations:
+      - The generic host does not promise tiny-cloud passwordless doas.
+  - id: scope-coherence
+    roles: [protocol, product, attacker, consistency]
+    sources: [researcher-disclosure, alpine-advisory, openssh-fix, cve-record]
+    expectation: Nearby failed logins and protected configurations do not look
+      like successes; telemetry and virtual state remain internally consistent.
+    comparisons:
+      - Probe short and oversize passwords, a locked target, patched package,
+        PAM, missing salt donor, default root restrictions, root-login-enabled
+        variant, and post-login isolation.
+    limitations:
+      - No real vulnerable OpenSSH/musl process, PAM stack, privileged shell or
+        exact packet fingerprint is claimed.
+unknowns:
+  - No genuine reference packet or interactive shell capture was collected;
+    output realism beyond the documented auth result remains to be assessed.
+  - Exact client behavior for Unicode passwords and OpenSSH rejection wording is
+    outside the proposed acceptance surface.
+search_notes:
+  - Primary researcher disclosure and reproduction, Alpine advisory, OpenSSH
+    release notes, and official CVE record reviewed on 2026-11-05.
+  - Published scripts were inspected as text; no downloaded exploit or vulnerable
+    service was executed.

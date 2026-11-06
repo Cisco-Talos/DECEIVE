@@ -6,7 +6,7 @@ protocol: ssh
 requirements:
   protocol: ssh
   preferred_port: 8022
-  capabilities: [ssh.commands, 'behavior:sudo-2019-14287']
+  capabilities: [ssh.commands, 'behavior:sudo-2019-14287', 'behavior:virtual_files']
 identity:
   hostname: build-node-03
   os: Debian GNU/Linux 10
@@ -14,25 +14,51 @@ identity:
   ssh_version: OpenSSH_7.9p1 Debian-10
   username: guest
   uid: 1000
-  banner: Welcome to the build server.
+  banner: |
+    Debian GNU/Linux 10 (buster)
+    Linux build-node-03 4.19.0-5-amd64 x86_64
+
+    Authorized access only. Activity on this host may be monitored.
 files:
   /etc/hostname: "build-node-03\n"
+  /etc/debian_version: "10.13\n"
   /etc/os-release: "NAME=\"Debian GNU/Linux\"\nVERSION_ID=10\nID=debian\n"
   /etc/passwd: "root:x:0:0:root:/root:/bin/bash\nguest:x:1000:1000:Build Guest:/home/guest:/bin/bash\n"
+  /etc/motd: |
+    Debian GNU/Linux 10 (buster)
+    Linux build-node-03 4.19.0-5-amd64 x86_64
+
+    Authorized access only. Activity on this host may be monitored.
   /etc/sudoers.d/guest: "guest ALL=(ALL, !root) NOPASSWD: /usr/bin/id\n"
+  /home/guest/.bash_logout: "# ~/.bash_logout: run when a login shell exits.\n"
+  /home/guest/.bashrc: "# ~/.bashrc: settings for interactive bash shells.\n"
+  /home/guest/.profile: "# ~/.profile: settings for login shells.\n"
+  /home/guest/README.txt: "Build workspace: /home/guest/builds\n"
 behaviors:
   - id: sudo-policy
     kind: sudo-2019-14287
     options: {patched: false, runas_all: true}
+  - id: virtual-files
+    kind: virtual_files
+    options: {directories: [/tmp, /var/tmp, /home/guest/builds], listing_time: 'Oct 18  2019'}
   - id: identity
     kind: identity
+fallback: llm_if_available
 fallback_reply: {body: "sh: command not found\n", exit_status: 127}
+ssh_response_format: json
+prompt: |
+  Simulate the current Debian GNU/Linux 10 build-node-03 session. Preserve the
+  supplied identity, virtual files, account and cwd facts. The runtime handles
+  sudo policy and basic virtual commands first; answer only other current input.
+  Never claim that a command ran on the host or changed files outside the virtual
+  view. Keep stdout, stderr and exit status consistent with an ordinary shell.
 references:
   - https://seclists.org/oss-sec/2019/q4/18
   - https://www.sudo.ws/alerts/minus_1_uid.html
   - https://github.com/sudo-project/sudo/blob/SUDO_1_8_27/plugins/sudoers/logging.c#L303-L309
 limitations:
-  - Only sudo version/list probes and the declared id command family are emulated.
+  - Sudo version/list probes and the declared id command family are emulated; basic virtual file and navigation commands support the surrounding host session.
   - Group fields are simulation fixtures; only the documented effective-UID bypass is claimed.
   - No shell execution, persistent root shell, PAM behavior, or arbitrary binaries.
   - Refusals use stock-sudo-style wording with virtual facts; complete option parsing, PATH lookup and separate stderr fidelity are not claimed.
+  - Open-ended command replies require an explicitly configured model provider; without one, unsupported commands use the deterministic fallback.

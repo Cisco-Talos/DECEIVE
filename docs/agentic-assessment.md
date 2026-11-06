@@ -2,6 +2,11 @@
 
 Status: implemented by the repository `deceive-assess` skill and development-only
 `deceive assess` helpers. See [usage](assessment.md) and [verification](verification.md).
+The scalar scoring sections below record the original v1/v2 design. They are
+superseded by research-v4 independent comparisons, criterion ratings, frozen
+research/coverage and mandatory major/subtle sensitivity controls in the
+[current workflow](assessment.md). Contract conformance alone cannot prove realism.
+Legacy scores cannot establish modern realism qualification.
 Native agents perform independent reviews, not technically enforced blind studies.
 This adapts the EvidenceForge `eforge-assess` workflow to interactive
 deceptions as a repeated assess/diagnose/fix/verify loop, with active interaction

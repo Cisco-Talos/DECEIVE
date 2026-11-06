@@ -2,6 +2,8 @@ import asyncssh
 import pytest
 
 from deceive.clients import ShellClient
+from deceive.config import load_profile
+from deceive.behaviors import validate_behavior
 from deceive.providers import ModelResult
 from unittest.mock import AsyncMock
 
@@ -36,9 +38,26 @@ async def test_listing_sizes_names_and_contents_share_the_same_view(runtime_fact
         row = next(line.split() for line in long.splitlines() if line.endswith(b'README.txt'))
         assert int(row[4]) == len(body)
         assert short == b'README.txt\n'
-        assert b'.bashrc' not in long and b'.ssh' not in long
+        assert b'.bashrc' in long and b'.ssh' not in long
         await shell.run('exit', 2)
     assert not runtime.test_provider.calls
+
+
+@pytest.mark.asyncio
+async def test_sudo_listing_uses_its_declared_stable_file_date(runtime_factory):
+    runtime = await runtime_factory('ssh', profile=load_profile('sudo-2019-14287'))
+    async with await connection(runtime) as client:
+        output = await client.run('ls -la')
+        assert b'Oct 18  2019' in output.stdout
+        assert b'Jan 15 09:00' not in output.stdout
+
+
+def test_virtual_listing_date_rejects_terminal_control_sequences():
+    profile = load_profile('sudo-2019-14287')
+    listing = next(b for b in profile.behaviors if b.kind == 'virtual_files')
+    listing.options['listing_time'] = 'Oct 18\nunauthorized'
+    with pytest.raises(ValueError, match='listing_time'):
+        validate_behavior(listing, profile)
 
 
 @pytest.mark.asyncio

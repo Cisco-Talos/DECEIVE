@@ -5,7 +5,7 @@ import asyncio
 import json
 from pathlib import Path
 
-from deceive.assessment.models import Decisions, ProbeAction, Review
+from deceive.assessment.models import Decisions, ProbeAction, ProbePlan, Review
 from deceive.assessment.workspace import load_json, prepare, write_json
 from deceive.operations import output_argument
 
@@ -19,7 +19,7 @@ def add_parser(commands) -> None:
     start.add_argument("--spec", type=Path, required=True)
     start.add_argument("--results-dir", type=Path, required=True)
     start.add_argument("--root", type=Path, default=Path.cwd())
-    for name in ("begin-loop", "probe", "record-review", "end-loop", "status", "resume", "finish", "render", "cleanup"):
+    for name in ("begin-loop", "plan", "audit", "probe", "record-review", "end-loop", "status", "resume", "finish", "render", "cleanup"):
         action = actions.add_parser(name)
         output_argument(action)
         action.add_argument("--run", type=Path, required=True)
@@ -33,9 +33,14 @@ def add_parser(commands) -> None:
             action.add_argument("--action", required=True, help="JSON object, or @path to JSON")
         if name == "record-review":
             action.add_argument("--file", type=Path, required=True)
+        if name == 'plan':
+            action.add_argument('--file', type=Path, required=True)
         if name == "end-loop":
             action.add_argument("--decisions", type=Path)
             action.add_argument("--confirm-plateau", action="store_true")
+            action.add_argument('--incomplete-reason')
+            action.add_argument('--incomplete-kind', default='incomplete_review', choices=[
+                'incomplete_review', 'harness_error', 'infrastructure_interruption'])
         if name in {"finish", "cleanup"}:
             action.add_argument("--remove", action="store_true")
             action.add_argument("--reason", choices=["cancelled", "budget_exhausted", "blocked", "incomplete"])
@@ -63,9 +68,16 @@ def execute(args: argparse.Namespace) -> tuple[dict, int]:
                                                         "action": probe.model_dump(mode="json")}))
         elif action == "record-review":
             result = engine.record_review(directory, Review.model_validate(load_json(args.file)))
+        elif action == 'plan':
+            from deceive.assessment.workflow import record_plan
+            result = record_plan(directory, ProbePlan.model_validate(load_json(args.file)))
+        elif action == 'audit':
+            from deceive.assessment.workflow import review_audit
+            result = review_audit(directory)
         elif action == "end-loop":
             decisions = Decisions.model_validate(load_json(args.decisions)) if args.decisions else Decisions()
-            result = asyncio.run(engine.end_loop(directory, decisions, plateau_confirmed=args.confirm_plateau))
+            result = asyncio.run(engine.end_loop(directory, decisions, plateau_confirmed=args.confirm_plateau,
+                incomplete_reason=args.incomplete_reason, incomplete_kind=args.incomplete_kind))
         elif action == "status":
             result = engine.public_state(load_json(directory / "state.json"))
         elif action == "resume":
@@ -81,6 +93,8 @@ def execute(args: argparse.Namespace) -> tuple[dict, int]:
             result = asyncio.run(engine.finish(directory, remove=args.remove, reason=args.reason))
     if action == "finish":
         return result, 0 if result["qualified"] and not result["teardown_errors"] else 1
+    if action in {'plan', 'audit'}:
+        return result, 0 if result['ready'] else 1
     return result, 0
 
 

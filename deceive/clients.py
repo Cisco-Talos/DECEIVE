@@ -40,6 +40,10 @@ class ShellClient:
         self.process = process
         self.banner = banner
         prompt = banner.rsplit(b"\n", 1)[-1]
+        if re.fullmatch(rb'(?:PS )?[A-Za-z]:\\[^\r\n]{0,4096}> ', prompt):
+            self.prefix = b'PS ' if prompt.startswith(b'PS ') else prompt[:3]
+            self.pattern = re.compile(rb'(?:PS )?[A-Za-z]:\\[^\r\n]{0,4096}> ')
+            return
         self.prefix = prompt.split(b":", 1)[0] + b":"
         hostname = self.prefix.rsplit(b"@", 1)[-1].removesuffix(b":")
         self.pattern = re.compile(rb"[^\r\n]{1,128}@" + re.escape(hostname) +
@@ -48,7 +52,7 @@ class ShellClient:
     @classmethod
     async def open(cls, connection: asyncssh.SSHClientConnection, timeout: float) -> ShellClient:
         process = await connection.create_process(term_type="xterm")
-        pattern = re.compile(rb"[^\r\n]{1,128}@[A-Za-z0-9][A-Za-z0-9.-]{0,62}:[^\r\n]{0,4096}[$#] ")
+        pattern = re.compile(rb"(?:[^\r\n]{1,128}@[A-Za-z0-9][A-Za-z0-9.-]{0,62}:[^\r\n]{0,4096}[$#] |(?:PS )?[A-Za-z]:\\[^\r\n]{0,4096}> )")
         banner = await asyncio.wait_for(process.stdout.readuntil(pattern), timeout)
         return cls(process, banner)
 

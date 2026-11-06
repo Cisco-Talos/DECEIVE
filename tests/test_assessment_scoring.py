@@ -5,6 +5,8 @@ import pytest
 
 def row(score=90, candidate="same", complete=True, progress=None):
     return {"candidate_id": candidate, "comparison_id": "cohort", "complete": complete,
+            'review_rubric': 'research-v4',
+            'assessment_status': 'assessed' if complete else 'insufficiently_assessed',
             "qualified": complete and score >= 85, "progress": progress or [],
             "targets": {"target-1": {"median": score, "qualified": complete and score >= 85}},
             "plateau_confirmed": True}

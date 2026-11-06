@@ -166,7 +166,7 @@ async def deploy(docker: Docker, run: Path, state: dict, spec: Spec, target: Tar
     endpoints, secrets, envs, reservations = [], [], set(), []
     profiles = []
     deployment = config.model_dump(mode="json")
-    deployment.update(data_dir="/data", log_file=None, deceptions=[],
+    deployment.update(data_dir="/data", log_file=None, deceptions=[], organization=None,
                       sensor_name=f'{state["run_id"]}-loop-{state["current"]["number"]}-attempt-{state["current"]["attempt"]}-{handle}')
     for index, listener in enumerate(plan.listeners):
         row = listener.model_dump(mode="json")
@@ -176,8 +176,10 @@ async def deploy(docker: Docker, run: Path, state: dict, spec: Spec, target: Tar
                 name = f"material-{index}-{key}"
                 secrets.append((row[key], "/material/" + name))
                 row[key] = "/material/" + name
-        references = listener.profiles or [listener.profile]
-        staged = [stage_profile(ref, stage) for ref in references]
+        references = [plan.references.get(member.instance_id or member.id,
+                      listener.profile or listener.profiles[0]) for member in plan.members[listener.name]]
+        staged = [stage_profile(ref.profile if hasattr(ref, 'profile') else ref, stage, profile=member)
+                  for ref, member in zip(references, plan.members[listener.name])]
         if listener.profile:
             row["profile"], row["profiles"] = staged[0], []
         else:
@@ -216,10 +218,12 @@ async def deploy(docker: Docker, run: Path, state: dict, spec: Spec, target: Tar
             endpoint.update(username=user, password="" if password == "*" else password)
         endpoints.append(endpoint)
         deployment["listeners"][index] = row
-        for member in plan.members[listener.name]:
-            member_index = next(i for i, ref in enumerate(references) if load_profile(ref).id == member.id)
+        for member_index, member in enumerate(plan.members[listener.name]):
+            reference = references[member_index]
             profiles.append({"id": member.id, "version": member.version,
-                             "fingerprint": fingerprint(member), "reference": references[member_index],
+                             'instance_id': member.instance_id or member.id,
+                             'organization_id': member.organization_id,
+                             "fingerprint": fingerprint(member), "reference": reference.profile if hasattr(reference, 'profile') else reference,
                              "staged_reference": staged[member_index],
                              "description": member.description, "references": member.references,
                              "limitations": member.limitations, "listener": listener.name})
@@ -299,7 +303,7 @@ async def deploy(docker: Docker, run: Path, state: dict, spec: Spec, target: Tar
         for sock in reservations:
             sock.close()
         entry = {"container": name, "volume": volume, "layout": layout, "image": image,
-                 "endpoints": endpoints, "profiles": profiles, "calibration": bool(target.calibration),
+                 "endpoints": endpoints, "profiles": profiles, "calibration": bool(target.calibration or target.control),
                  "target_name": target.name, "reused": reuse,
                  "sensor": deployment["sensor_name"], "stage": str(stage),
                  "allowed_profile_ids": sorted({p.id for owners in plan.owners.values()

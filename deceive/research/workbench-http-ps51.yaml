@@ -1,0 +1,242 @@
+schema_version: 1
+profile_id: workbench-http-ps51
+version: '1'
+subject: Fictional application and bounded platform/protocol plausibility
+kind: fictional
+sources:
+- id: authored-design
+  kind: design
+  title: workbench-http-ps51
+  url: null
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - Profile-defined identities, application paths and payloads are authored requirements,
+    not external realism evidence.
+  limitations: []
+- id: http-semantics
+  kind: standard
+  title: HTTP Semantics, RFC 9110
+  url: https://www.rfc-editor.org/rfc/rfc9110.html
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - HEAD carries no response content; representation metadata must remain meaningful.
+    Status, method and media type have distinct semantics.
+  limitations: []
+- id: http2
+  kind: standard
+  title: HTTP/2, RFC 9113
+  url: https://www.rfc-editor.org/rfc/rfc9113.html
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - HTTP semantics survive multiplexed streams; stream completion and forbidden connection-specific
+    fields matter.
+  limitations: []
+- id: http3
+  kind: standard
+  title: HTTP/3, RFC 9114
+  url: https://www.rfc-editor.org/rfc/rfc9114.html
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - HTTP semantics run on QUIC streams; response completion and advertised discovery
+    must agree with the endpoint.
+  limitations: []
+- id: cookies
+  kind: standard
+  title: HTTP State Management, RFC 6265
+  url: https://www.rfc-editor.org/rfc/rfc6265.html
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - Separate Set-Cookie fields establish scoped client cookies; user agents maintain
+    their own cookie stores.
+  limitations: []
+- id: windows-whoami
+  kind: vendor
+  title: Microsoft whoami reference
+  url: https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/whoami
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - No-argument whoami returns domain and username, not a bare username.
+  limitations: []
+- id: windows-cmd
+  kind: vendor
+  title: Microsoft cmd reference
+  url: https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/cmd
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - /c runs a command and exits; /d disables AutoRun. Quotes preserve paths containing
+    spaces.
+  limitations:
+  - Only declared single-command wrappers are assessed; full cmd grammar is excluded.
+- id: windows-type
+  kind: vendor
+  title: Microsoft type reference
+  url: https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/type
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - cmd type displays file content. PowerShell type is a Get-Content alias with different
+    semantics. Quoted paths may contain spaces.
+  limitations: []
+- id: windows-where
+  kind: vendor
+  title: Microsoft where reference
+  url: https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/where
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - where searches for matching files using path and extension rules; discovery must
+    identify the same installed program.
+  limitations:
+  - The deception promises named program discovery, not the full search implementation.
+- id: ps51-encoding
+  kind: vendor
+  title: Microsoft Windows PowerShell character encoding
+  url: https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_character_encoding?view=powershell-5.1
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - 5.1 redirection uses UTF-16LE with BOM; Set/Add-Content default new files to the
+    active ANSI encoding; append recognizes existing BOMs.
+  limitations:
+  - ANSI means the selected code page, not universally cp1252. No genuine Windows
+    capture has been collected.
+- id: ps-content
+  kind: vendor
+  title: Microsoft Get-Content reference
+  url: https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.management/get-content?view=powershell-5.1
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - Get-Content reads logical content; text output is not interchangeable with a raw
+    byte stream.
+  limitations:
+  - Providers, object formatting and broad options are outside the bounded implementation.
+criteria:
+- id: http-fidelity
+  roles:
+  - protocol
+  - product
+  - attacker
+  - consistency
+  sources:
+  - http-semantics
+  - http2
+  - http3
+  expectation: Representation bytes, headers, errors and completion remain credible
+    across claimed HTTP versions.
+  comparisons:
+  - Compare GET/HEAD on a representative resource, a negative request, media type
+    and length; substantive workflow on each advertised version.
+  limitations: []
+- id: private-client-state
+  roles:
+  - protocol
+  - product
+  - attacker
+  - consistency
+  sources:
+  - cookies
+  expectation: Independent clients have separate cookie stores and claimed private
+    application state.
+  comparisons:
+  - Create a unique marker in one cookie client and read it; use an untouched independent
+    recipient; repeat after reconnect.
+  limitations:
+  - Application lifetime is an authored design choice; cookie standards do not require
+    private files.
+- id: windows-identity-discovery
+  roles:
+  - protocol
+  - product
+  - attacker
+  - consistency
+  sources:
+  - windows-whoami
+  - windows-where
+  - windows-cmd
+  expectation: Windows identity and claimed program discovery agree with the same
+    host/account.
+  comparisons:
+  - Compare hostname with whoami; discover workbench and invoke its declared absolute
+    path; test a quoted path containing spaces.
+  limitations:
+  - Full where wildcard/PATHEXT resolution and exact Get-Command tables are excluded.
+- id: windows-content
+  roles:
+  - protocol
+  - product
+  - attacker
+  - consistency
+  sources:
+  - windows-type
+  - windows-cmd
+  expectation: Literal file commands preserve intended text and path identity.
+  comparisons:
+  - Write a unique marker to a quoted path, read with case variation, append and read
+    again; compare fresh process cwd/status with private file lifetime.
+  limitations: []
+- id: powershell-encoding
+  roles:
+  - protocol
+  - product
+  - attacker
+  - consistency
+  sources:
+  - ps51-encoding
+  - ps-content
+  - windows-type
+  expectation: Text cmdlets and redirection reflect the selected PowerShell encoding
+    and logical-content semantics.
+  comparisons:
+  - Create a new café file with Set-Content and inspect bytes through cmd /d /c type;
+    independently create a redirected file and check BOM; append naïve and check one
+    BOM plus logical Get-Content readback.
+  limitations:
+  - 5.1 ANSI uses configured cp1252 here; full object formatting and arbitrary scripts
+    are excluded. Native Windows reference capture remains unavailable.
+- id: scope-coherence
+  roles:
+  - protocol
+  - product
+  - attacker
+  - consistency
+  sources:
+  - authored-design
+  - http-semantics
+  - http2
+  - http3
+  - cookies
+  - windows-whoami
+  - windows-cmd
+  - windows-type
+  - windows-where
+  - ps51-encoding
+  - ps-content
+  expectation: Representative supported and nearby challenge interactions maintain
+    the researched platform/protocol conventions and consistent authored identity.
+  comparisons:
+  - Choose variations beyond the supplied examples; distinguish an impossible in-scope
+    result from a documented exclusion; identify material unknowns instead of awarding
+    maximum by default.
+  limitations:
+  - Authored application status and custom workbench command output establish functional
+    conformance only.
+unknowns:
+- No complete real-system equivalence claim. Material unsampled facets must remain
+  unassessed.
+- Research does not independently verify every distribution patch/build identity or
+  every configuration.
+search_notes:
+- Primary protocol/platform sources read as documentation; no live vulnerable reference
+  software, downloaded PoCs or scanners executed.
+- No genuine counterpart packet/session captures collected; documented behavior and
+  bounded plausibility are the available comparison basis.
+- No CVE/affected-product exploit claim for this profile; CVE-specific PoCs/detectors
+  are not applicable.

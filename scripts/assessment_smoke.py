@@ -24,7 +24,8 @@ async def verify(image: str, root: Path) -> dict:
         custom = base / "profile.yaml"
         custom.write_text(json.dumps(profile))
         spec = base / "spec.yaml"
-        spec.write_text(json.dumps({"policy": {"mode": "fixed", "max_loops": 2, "confirmations": 1}, "roles": ["protocol"],
+        spec.write_text(json.dumps({'schema_version': 1, 'review_rubric': 'evidence-v2',
+            "policy": {"mode": "fixed", "max_loops": 2, "confirmations": 1}, "roles": ["protocol"],
             "docker": {"build": False, "image": image}, "targets": [
                 {"name": "web", "profiles": [str(custom)], "protocol": "https", "versions": ["2", "3"],
                  "suite": str(files("deceive").joinpath("acceptance/demo-http.yaml"))},
@@ -66,9 +67,10 @@ async def verify(image: str, root: Path) -> dict:
                             "coverage_limits": "Deterministic integration fixture, not an expert realism judgment"},
                         summary="Deterministic integration fixture; not a live realism assessment"))
                 result = await engine.end_loop(run)
-                assert result["qualified"], result
+                assert not result['qualified'] and result['assessment_status'] == 'legacy_unvalidated', result
+                assert all(t['correctness'] == t['telemetry'] == 'passed' for t in result['targets'].values()), result
             final = await engine.finish(run)
-            assert final["qualified"]
+            assert not final["qualified"]  # This is an integration fixture, never a realism panel.
             assert Path(final["dashboard"]).is_file()
             return {"passed": True, "loops": 2, "profile_update_reused_containers": True,
                     "protocols": ["ssh", "1.1", "2", "3"], "live_reviewers": False}

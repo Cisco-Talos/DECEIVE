@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "approved_on": "2026-11-05",
+  "approval": "Human approved the researched generic Alpine SSH bypass target and criteria, then requested realistic deploy/backup/admin accounts and explicit root and service-account coverage in the authoring chat on 2026-11-05. The revised criteria document records that scope. On 2026-11-05 the human requested the identifier spelling sshhole throughout; this was an identifier-only rename, preserving the agreed behavior and test assertions.",
+  "criteria": "docs/sshhole-acceptance-proposal.md",
+  "profile_version": "1",
+  "suite_version": "1",
+  "suites": {
+    "sshhole-2026-123158": "8ec0f2522718f34c8fe551bdb6ef9c53c37e98e7bad3a872524a8aff9d00b3bd"
+  }
+}

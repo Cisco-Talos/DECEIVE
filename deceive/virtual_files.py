@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import posixpath
+import re
 import shlex
 
 from deceive.interaction import Interaction, Response, Session
@@ -33,8 +34,14 @@ def view(profile: Profile, session: Session) -> tuple[dict[str, bytes], set[str]
 def validate(spec: Behavior, profile: Profile | None) -> None:
     if profile is not None and profile.protocol != 'ssh':
         raise ValueError('Virtual files require SSH')
-    if set(spec.options) - {'directories'}:
+    if set(spec.options) - {'directories', 'listing_time'}:
         raise ValueError('Unknown virtual_files option')
+    listing_time = spec.options.get('listing_time', 'Jan 15 09:00')
+    if not isinstance(listing_time, str) or not re.fullmatch(
+        r'(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [ 0-3][0-9] '
+        r'(?:[0-2][0-9]:[0-5][0-9]| [0-9]{4})', listing_time
+    ):
+        raise ValueError('Virtual listing_time must use an ls-style month, day and time or year')
     directories = spec.options.get('directories', [])
     if not isinstance(directories, list) or len(directories) > MAX_NODES or any(
         not isinstance(p, str) or not p.startswith('/') or '\x00' in p or len(p.encode()) > 4096
@@ -46,15 +53,50 @@ def validate(spec: Behavior, profile: Profile | None) -> None:
         raise ValueError('Virtual file names must be bounded, normalized absolute paths')
 
 
+def shell_name(profile: Profile, session: Session) -> str:
+    """Use the simulated account's shell for diagnostics when it is declared."""
+    account = profile.ssh_auth.accounts.get(session.username) if profile.ssh_auth else None
+    return posixpath.basename(account.shell) if account else 'bash'
+
+
 def respond(profile: Profile, spec: Behavior, interaction: Interaction,
             session: Session) -> Response | None:
     if interaction.protocol != 'ssh':
         return None
+    shell = shell_name(profile, session)
     try:
         words = shlex.split(interaction.command)
     except ValueError:
-        return Response(stderr=b'bash: syntax error\n', exit_status=2)
-    if not words or words[0] not in {'cat', 'ls', 'cd', 'touch', 'mkdir', 'rm', 'echo'}:
+        return Response(stderr=f'{shell}: syntax error\n'.encode(), exit_status=2)
+    if words and words[0] in {'/usr/bin/wc', '/bin/wc'}:
+        words[0] = 'wc'
+    if words and words[0] in {'printf', '/usr/bin/printf', '/bin/printf'}:
+        if (len(words) != 2 or words[1].startswith('-') or
+            any(c in interaction.command for c in '\\$`;|&<>\r\n')):
+            return None
+        text, output, index = words[1], [], 0
+        while index < len(text):
+            if text[index] != '%':
+                output.append(text[index])
+                index += 1
+            elif index + 1 == len(text):
+                return Response(body=''.join(output).encode(),
+                    stderr=b'printf: %: invalid conversion specification\n', exit_status=1)
+            elif text[index + 1] == '%':
+                output.append('%')
+                index += 2
+            else:
+                return None
+        return Response(body=''.join(output).encode())
+    if words and words[0] == 'history' and len(words) == 1:
+        if not interaction.interactive:
+            return Response()
+        commands = [m.content for m in session.history if m.role == 'user' and m.content.strip()]
+        commands.append(interaction.command)
+        first = max(1, session.input_count - len(commands) + 1)
+        return Response(body=''.join(f'{n:5}  {command}\n'
+            for n, command in enumerate(commands, first)).encode())
+    if not words or words[0] not in {'cat', 'ls', 'cd', 'touch', 'mkdir', 'rm', 'echo', 'wc'}:
         return None
     files, directories = view(profile, session)
     home = '/root' if session.username == 'root' else '/home/' + session.username
@@ -74,9 +116,16 @@ def respond(profile: Profile, spec: Behavior, interaction: Interaction,
                 and sum(len(v) for v in new_files.values()) <= MAX_BYTES)
 
     command, args = words[0], words[1:]
+    listing_time = spec.options.get('listing_time', 'Jan 15 09:00')
     # Complex shell grammar stays with generative fallback; this parser never evaluates it.
     if any(token in {';', '&&', '||', '|', '<', '2>', '>&2'} for token in args):
         return None
+    if command == 'wc' and len(args) == 2 and args[0] in {'-c', '--bytes'} and not args[1].startswith('-'):
+        key = path(args[1])
+        if key not in files:
+            reason = 'Is a directory' if key in directories else 'No such file or directory'
+            return error('wc', args[1], reason)
+        return Response(body=f'{len(files[key])} {args[1]}\n'.encode())
     if command == 'cat' and args and all(not a.startswith('-') for a in args):
         output, diagnostics = bytearray(), bytearray()
         for name in args:
@@ -91,7 +140,7 @@ def respond(profile: Profile, spec: Behavior, interaction: Interaction,
         name = args[0] if args else home
         key = path(name)
         if key not in directories:
-            return error('bash: cd', name, 'Not a directory' if key in files else 'No such file or directory')
+            return error(f'{shell}: cd', name, 'Not a directory' if key in files else 'No such file or directory')
         return Response(transition={'cwd': key})
     if command == 'ls':
         flags = ''.join(a[1:] for a in args if a.startswith('-'))
@@ -124,7 +173,7 @@ def respond(profile: Profile, spec: Behavior, interaction: Interaction,
                 if item in {'/tmp', '/var/tmp'}:
                     mode = 'drwxrwxrwt'
                 links = 2 + sum(posixpath.dirname(p) == item and p != item for p in directories) if directory else 1
-                rows.append(f'{mode} {links} {owner} {owner} {size} Jan 15 09:00 {display}')
+                rows.append(f'{mode} {links} {owner} {owner} {size} {listing_time} {display}')
             else:
                 rows.append(display)
         if 'l' in flags and key in directories and 'd' not in flags:
@@ -161,9 +210,9 @@ def respond(profile: Profile, spec: Behavior, interaction: Interaction,
             return None
         key = path(args[-1])
         if key in directories:
-            return error('bash', args[-1], 'Is a directory')
+            return error(shell, args[-1], 'Is a directory')
         if posixpath.dirname(key) not in directories:
-            return error('bash', args[-1], 'No such file or directory')
+            return error(shell, args[-1], 'No such file or directory')
         values = args[:-2]
         newline = not (values and values[0] == '-n')
         if not newline:
@@ -176,7 +225,7 @@ def respond(profile: Profile, spec: Behavior, interaction: Interaction,
         updates = session.virtual_files | {key: content}
         removed = session.removed_files - {key}
         if not capacity(updates, session.virtual_directories, removed):
-            return error('bash', args[-1], 'No space left on device')
+            return error(shell, args[-1], 'No space left on device')
         session.virtual_files, session.removed_files = updates, removed
         return Response()
     return None

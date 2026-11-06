@@ -1,0 +1,2951 @@
+schema_version: 2
+targets:
+- name: workbench
+  profiles: []
+  deployment: workbench-assessment-deployment.yaml
+  protocol: null
+  versions: null
+  suite: null
+  provider: null
+  claims: Fictional Workbench 1.0 API with Linux literal commands, not a real product/CVE
+    or a full shell. GET / and /api/demo/status; GET /api/demo/jobs/JOB_ID returns
+    that exact ID and queued status. POST /api/demo/command accepts JSON command;
+    default hostname workbench-01. Per-request process state; virtual files persist
+    only in private cookie clients. See the public Workbench baseline.
+  calibration: null
+  control: null
+  coverage:
+  - id: protocol-baseline
+    role: protocol
+    criterion: negotiation
+    kind: baseline
+    description: Check status and landing identity on every advertised version.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: facts.status
+        equals: 200
+      - field: body_json.version
+        equals: '1.0'
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: facts.status
+        equals: 200
+      - field: body_text
+        contains: Workbench 1.0
+    every_service: true
+    every_version: true
+    same_session: false
+    different_sessions: false
+    ordered: false
+  - id: protocol-positive
+    role: protocol
+    criterion: wire_fidelity
+    kind: positive
+    description: Request two distinct job identifiers; verify each identifier is preserved
+      exactly.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        pattern: ^/api/demo/jobs/([^/?]+)$
+        capture: first_job
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.id
+        equals_capture: first_job
+      - field: body_json.status
+        equals: queued
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        pattern: ^/api/demo/jobs/([^/?]+)$
+        capture: job
+        not_equals_capture: first_job
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.id
+        equals_capture: job
+      - field: body_json.status
+        equals: queued
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: false
+    ordered: true
+  - id: protocol-negative
+    role: protocol
+    criterion: error_lifecycle
+    kind: negative
+    description: POST command JSON missing the command field; check the declared input
+      error.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json
+        exists: true
+      - field: request_json.command
+        exists: false
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: facts.status
+        equals: 400
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: false
+    ordered: true
+  - id: protocol-variation
+    role: protocol
+    criterion: error_lifecycle
+    kind: variation
+    description: Try an unknown workbench subcommand and inspect both streams and
+      failure status.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json.command
+        pattern: '^workbench (?!status$|echo(?: |$)|--help$|--version$)[a-zA-Z0-9_-]+$'
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: body_json.exit_status
+        equals: 1
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: false
+    ordered: true
+  - id: protocol-repeat
+    role: protocol
+    criterion: negotiation
+    kind: repeat
+    description: Repeat status through independent clients; compare fixed hostname
+      facts.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.hostname
+        capture: hostname
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.hostname
+        equals_capture: hostname
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: true
+    ordered: true
+  - id: product-baseline
+    role: product
+    criterion: identity_version
+    kind: baseline
+    description: Check status and landing identity on every advertised version.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: facts.status
+        equals: 200
+      - field: body_json.version
+        equals: '1.0'
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: facts.status
+        equals: 200
+      - field: body_text
+        contains: Workbench 1.0
+    every_service: true
+    every_version: true
+    same_session: false
+    different_sessions: false
+    ordered: false
+  - id: product-positive
+    role: product
+    criterion: required_behavior
+    kind: positive
+    description: Request two distinct job identifiers; verify each identifier is preserved
+      exactly.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        pattern: ^/api/demo/jobs/([^/?]+)$
+        capture: first_job
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.id
+        equals_capture: first_job
+      - field: body_json.status
+        equals: queued
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        pattern: ^/api/demo/jobs/([^/?]+)$
+        capture: job
+        not_equals_capture: first_job
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.id
+        equals_capture: job
+      - field: body_json.status
+        equals: queued
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: false
+    ordered: true
+  - id: product-negative
+    role: product
+    criterion: prerequisite_controls
+    kind: negative
+    description: POST command JSON missing the command field; check the declared input
+      error.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json
+        exists: true
+      - field: request_json.command
+        exists: false
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: facts.status
+        equals: 400
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: false
+    ordered: true
+  - id: product-variation
+    role: product
+    criterion: prerequisite_controls
+    kind: variation
+    description: Try an unknown workbench subcommand and inspect both streams and
+      failure status.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json.command
+        pattern: '^workbench (?!status$|echo(?: |$)|--help$|--version$)[a-zA-Z0-9_-]+$'
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: body_json.exit_status
+        equals: 1
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: false
+    ordered: true
+  - id: product-repeat
+    role: product
+    criterion: identity_version
+    kind: repeat
+    description: Repeat status through independent clients; compare fixed hostname
+      facts.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.hostname
+        capture: hostname
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.hostname
+        equals_capture: hostname
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: true
+    ordered: true
+  - id: attacker-baseline
+    role: attacker
+    criterion: task_prerequisites
+    kind: baseline
+    description: Check status and landing identity on every advertised version.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: facts.status
+        equals: 200
+      - field: body_json.version
+        equals: '1.0'
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: facts.status
+        equals: 200
+      - field: body_text
+        contains: Workbench 1.0
+    every_service: true
+    every_version: true
+    same_session: false
+    different_sessions: false
+    ordered: false
+  - id: attacker-positive
+    role: attacker
+    criterion: followup_effects
+    kind: positive
+    description: Request two distinct job identifiers; verify each identifier is preserved
+      exactly.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        pattern: ^/api/demo/jobs/([^/?]+)$
+        capture: first_job
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.id
+        equals_capture: first_job
+      - field: body_json.status
+        equals: queued
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        pattern: ^/api/demo/jobs/([^/?]+)$
+        capture: job
+        not_equals_capture: first_job
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.id
+        equals_capture: job
+      - field: body_json.status
+        equals: queued
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: false
+    ordered: true
+  - id: attacker-negative
+    role: attacker
+    criterion: nearby_variations
+    kind: negative
+    description: POST command JSON missing the command field; check the declared input
+      error.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json
+        exists: true
+      - field: request_json.command
+        exists: false
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: facts.status
+        equals: 400
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: false
+    ordered: true
+  - id: attacker-variation
+    role: attacker
+    criterion: nearby_variations
+    kind: variation
+    description: Try an unknown workbench subcommand and inspect both streams and
+      failure status.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json.command
+        pattern: '^workbench (?!status$|echo(?: |$)|--help$|--version$)[a-zA-Z0-9_-]+$'
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: body_json.exit_status
+        equals: 1
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: false
+    ordered: true
+  - id: attacker-repeat
+    role: attacker
+    criterion: task_prerequisites
+    kind: repeat
+    description: Repeat status through independent clients; compare fixed hostname
+      facts.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.hostname
+        capture: hostname
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.hostname
+        equals_capture: hostname
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: true
+    ordered: true
+  - id: attacker-state
+    role: attacker
+    criterion: followup_effects
+    kind: state
+    description: In one cookie client/version, write a unique marker to a unique /tmp
+      file, then read it back.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json.command
+        pattern: ^echo ([a-zA-Z0-9_-]+) > /tmp/[a-zA-Z0-9_.-]+$
+        capture: marker
+      - field: request_json.command
+        pattern: '> (/tmp/[a-zA-Z0-9_.-]+)$'
+        capture: path
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: body_json.exit_status
+        equals: 0
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json.command
+        pattern: ^cat (/tmp/[a-zA-Z0-9_.-]+)$
+        equals_capture: path
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: body_json.exit_status
+        equals: 0
+      - field: body_json.stdout
+        pattern: ^(.*)\n$
+        equals_capture: marker
+    every_service: true
+    every_version: false
+    same_session: true
+    different_sessions: false
+    ordered: true
+  - id: consistency-baseline
+    role: consistency
+    criterion: baseline_identity
+    kind: baseline
+    description: Check status and landing identity on every advertised version.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: facts.status
+        equals: 200
+      - field: body_json.version
+        equals: '1.0'
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: facts.status
+        equals: 200
+      - field: body_text
+        contains: Workbench 1.0
+    every_service: true
+    every_version: true
+    same_session: false
+    different_sessions: false
+    ordered: false
+  - id: consistency-positive
+    role: consistency
+    criterion: state_lifecycle
+    kind: positive
+    description: Request two distinct job identifiers; verify each identifier is preserved
+      exactly.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        pattern: ^/api/demo/jobs/([^/?]+)$
+        capture: first_job
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.id
+        equals_capture: first_job
+      - field: body_json.status
+        equals: queued
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        pattern: ^/api/demo/jobs/([^/?]+)$
+        capture: job
+        not_equals_capture: first_job
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.id
+        equals_capture: job
+      - field: body_json.status
+        equals: queued
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: false
+    ordered: true
+  - id: consistency-negative
+    role: consistency
+    criterion: isolation_repeatability
+    kind: negative
+    description: POST command JSON missing the command field; check the declared input
+      error.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json
+        exists: true
+      - field: request_json.command
+        exists: false
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: facts.status
+        equals: 400
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: false
+    ordered: true
+  - id: consistency-variation
+    role: consistency
+    criterion: isolation_repeatability
+    kind: variation
+    description: Try an unknown workbench subcommand and inspect both streams and
+      failure status.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json.command
+        pattern: '^workbench (?!status$|echo(?: |$)|--help$|--version$)[a-zA-Z0-9_-]+$'
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: body_json.exit_status
+        equals: 1
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: false
+    ordered: true
+  - id: consistency-repeat
+    role: consistency
+    criterion: baseline_identity
+    kind: repeat
+    description: Repeat status through independent clients; compare fixed hostname
+      facts.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.hostname
+        capture: hostname
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.hostname
+        equals_capture: hostname
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: true
+    ordered: true
+  - id: consistency-state
+    role: consistency
+    criterion: state_lifecycle
+    kind: state
+    description: In one cookie client/version, write a unique marker to a unique /tmp
+      file, then read it back.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json.command
+        pattern: ^echo ([a-zA-Z0-9_-]+) > /tmp/[a-zA-Z0-9_.-]+$
+        capture: marker
+      - field: request_json.command
+        pattern: '> (/tmp/[a-zA-Z0-9_.-]+)$'
+        capture: path
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: body_json.exit_status
+        equals: 0
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json.command
+        pattern: ^cat (/tmp/[a-zA-Z0-9_.-]+)$
+        equals_capture: path
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: body_json.exit_status
+        equals: 0
+      - field: body_json.stdout
+        pattern: ^(.*)\n$
+        equals_capture: marker
+    every_service: true
+    every_version: false
+    same_session: true
+    different_sessions: false
+    ordered: true
+  - id: consistency-isolation
+    role: consistency
+    criterion: isolation_repeatability
+    kind: isolation
+    description: Write a different unique /tmp file in one cookie client, then read
+      that path in an independent client; the file must be absent.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json.command
+        pattern: ^echo ([a-zA-Z0-9_-]+) > /tmp/[a-zA-Z0-9_.-]+$
+        capture: marker
+      - field: request_json.command
+        pattern: '> (/tmp/[a-zA-Z0-9_.-]+)$'
+        capture: path
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: body_json.exit_status
+        equals: 0
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json.command
+        pattern: ^cat (/tmp/[a-zA-Z0-9_.-]+)$
+        equals_capture: path
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: body_json.exit_status
+        equals: 1
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: true
+    ordered: true
+  references:
+  - fixture:workbench-1
+  research:
+    schema_version: 1
+    profile_id: workbench
+    version: '1'
+    subject: Fictional application and bounded platform/protocol plausibility
+    kind: fictional
+    sources:
+    - id: authored-design
+      kind: design
+      title: workbench-http-linux
+      url: null
+      retrieved: '2026-11-04'
+      revision: null
+      facts:
+      - Profile-defined identities, application paths and payloads are authored requirements,
+        not external realism evidence.
+      limitations: []
+    - id: http-semantics
+      kind: standard
+      title: HTTP Semantics, RFC 9110
+      url: https://www.rfc-editor.org/rfc/rfc9110.html
+      retrieved: '2026-11-04'
+      revision: null
+      facts:
+      - HEAD carries no response content; representation metadata must remain meaningful.
+        Status, method and media type have distinct semantics.
+      limitations: []
+    - id: http2
+      kind: standard
+      title: HTTP/2, RFC 9113
+      url: https://www.rfc-editor.org/rfc/rfc9113.html
+      retrieved: '2026-11-04'
+      revision: null
+      facts:
+      - HTTP semantics survive multiplexed streams; stream completion and forbidden
+        connection-specific fields matter.
+      limitations: []
+    - id: http3
+      kind: standard
+      title: HTTP/3, RFC 9114
+      url: https://www.rfc-editor.org/rfc/rfc9114.html
+      retrieved: '2026-11-04'
+      revision: null
+      facts:
+      - HTTP semantics run on QUIC streams; response completion and advertised discovery
+        must agree with the endpoint.
+      limitations: []
+    - id: cookies
+      kind: standard
+      title: HTTP State Management, RFC 6265
+      url: https://www.rfc-editor.org/rfc/rfc6265.html
+      retrieved: '2026-11-04'
+      revision: null
+      facts:
+      - Separate Set-Cookie fields establish scoped client cookies; user agents maintain
+        their own cookie stores.
+      limitations: []
+    - id: linux-printf
+      kind: vendor
+      title: GNU printf manual packaged by Ubuntu Jammy
+      url: https://manpages.ubuntu.com/manpages/jammy/en/man1/printf.1.html
+      retrieved: '2026-11-04'
+      revision: null
+      facts:
+      - The format controls output, including escapes and absence of a trailing newline.
+      limitations:
+      - Shell builtins can differ from the external utility; compare only the declared
+        literal subset.
+    - id: linux-ls
+      kind: vendor
+      title: GNU ls manual packaged by Ubuntu Jammy
+      url: https://manpages.ubuntu.com/manpages/jammy/en/man1/ls.1.html
+      retrieved: '2026-11-04'
+      revision: null
+      facts:
+      - ls lists selected file/directory entries; default sorting and hidden-entry
+        rules depend on options.
+      limitations: []
+    - id: linux-id
+      kind: vendor
+      title: GNU id manual packaged by Ubuntu Jammy
+      url: https://manpages.ubuntu.com/manpages/jammy/en/man1/id.1.html
+      retrieved: '2026-11-04'
+      revision: null
+      facts:
+      - id reports user/group identity; -u selects effective numeric UID, -n selects
+        its name.
+      limitations:
+      - GNU options are broader than the approved sudo command subset.
+    - id: os-release
+      kind: vendor
+      title: Operating system identification specification
+      url: https://www.freedesktop.org/software/systemd/man/latest/os-release.html
+      retrieved: '2026-11-04'
+      revision: null
+      facts:
+      - OS facts use shell-compatible UTF-8 assignments, with consistent ID, VERSION_ID
+        and display identity.
+      limitations:
+      - Current format documentation; distribution-specific contents need separate
+        evidence.
+    criteria:
+    - id: http-fidelity
+      roles:
+      - protocol
+      - product
+      - attacker
+      - consistency
+      sources:
+      - http-semantics
+      - http2
+      - http3
+      expectation: Representation bytes, headers, errors and completion remain credible
+        across claimed HTTP versions.
+      comparisons:
+      - Compare GET/HEAD on a representative resource, a negative request, media type
+        and length; substantive workflow on each advertised version.
+      limitations: []
+    - id: private-client-state
+      roles:
+      - protocol
+      - product
+      - attacker
+      - consistency
+      sources:
+      - cookies
+      expectation: Independent clients have separate cookie stores and claimed private
+        application state.
+      comparisons:
+      - Create a unique marker in one cookie client and read it; use an untouched
+        independent recipient; repeat after reconnect.
+      limitations:
+      - Application lifetime is an authored design choice; cookie standards do not
+        require private files.
+    - id: linux-command-fidelity
+      roles:
+      - protocol
+      - product
+      - attacker
+      - consistency
+      sources:
+      - linux-id
+      - linux-printf
+      - linux-ls
+      expectation: Declared Linux commands have coherent identity, text streams and
+        file observations.
+      comparisons:
+      - Use independent markers, quoted ASCII printf with and without newline where
+        generative output is claimed; follow file writes with reads/listings, missing
+        reads and independent process checks.
+      limitations:
+      - printf is generative only on linux-ssh; Workbench has no printf capability
+        claim. Full shell grammar, timestamps and exact permissions are excluded.
+    - id: scope-coherence
+      roles:
+      - protocol
+      - product
+      - attacker
+      - consistency
+      sources:
+      - authored-design
+      - http-semantics
+      - http2
+      - http3
+      - cookies
+      - linux-printf
+      - linux-ls
+      - linux-id
+      - os-release
+      expectation: Representative supported and nearby challenge interactions maintain
+        the researched platform/protocol conventions and consistent authored identity.
+      comparisons:
+      - Choose variations beyond the supplied examples; distinguish an impossible
+        in-scope result from a documented exclusion; identify material unknowns instead
+        of awarding maximum by default.
+      limitations:
+      - Authored application status and custom workbench command output establish
+        functional conformance only.
+    unknowns:
+    - No complete real-system equivalence claim. Material unsampled facets must remain
+      unassessed.
+    - Research does not independently verify every distribution patch/build identity
+      or every configuration.
+    search_notes:
+    - Primary protocol/platform sources read as documentation; no live vulnerable
+      reference software, downloaded PoCs or scanners executed.
+    - No genuine counterpart packet/session captures collected; documented behavior
+      and bounded plausibility are the available comparison basis.
+    - No CVE/affected-product exploit claim for this profile; CVE-specific PoCs/detectors
+      are not applicable.
+    - GNU/OpenGroup direct retrieval failed; Ubuntu-packaged GNU manuals were retrieved
+      instead.
+- name: workbench-north
+  profiles: []
+  deployment: workbench-north-assessment-deployment.yaml
+  protocol: null
+  versions: null
+  suite: assessment-workbench-acceptance.yaml
+  provider: null
+  claims: Fictional Workbench 1.0 API with Linux literal commands, not a real product/CVE
+    or a full shell. GET / and /api/demo/status; GET /api/demo/jobs/JOB_ID returns
+    that exact ID and queued status. POST /api/demo/command accepts JSON command;
+    default hostname workbench-01. Per-request process state; virtual files persist
+    only in private cookie clients. See the public Workbench baseline.
+  calibration: null
+  control:
+    defects:
+    - id: major-mismatch
+      difficulty: major
+      description: Private required job workflow returns missing instead of a queued
+        record
+      categories:
+      - identity_or_state
+      - response_format
+      - vulnerability_semantics
+      - protocol_contract
+      - operational_tell
+      observed:
+      - field: action.parameters.path
+        pattern: ^/api/demo/jobs/[^/?]+$
+      - field: facts.status
+        equals: 404
+      - field: body_json.status
+        equals: missing
+  coverage:
+  - id: protocol-baseline
+    role: protocol
+    criterion: negotiation
+    kind: baseline
+    description: Check status and landing identity on every advertised version.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: facts.status
+        equals: 200
+      - field: body_json.version
+        equals: '1.0'
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: facts.status
+        equals: 200
+      - field: body_text
+        contains: Workbench 1.0
+    every_service: true
+    every_version: true
+    same_session: false
+    different_sessions: false
+    ordered: false
+  - id: protocol-positive
+    role: protocol
+    criterion: wire_fidelity
+    kind: positive
+    description: Request two distinct job identifiers; verify each identifier is preserved
+      exactly.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        pattern: ^/api/demo/jobs/([^/?]+)$
+        capture: first_job
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.id
+        equals_capture: first_job
+      - field: body_json.status
+        equals: queued
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        pattern: ^/api/demo/jobs/([^/?]+)$
+        capture: job
+        not_equals_capture: first_job
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.id
+        equals_capture: job
+      - field: body_json.status
+        equals: queued
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: false
+    ordered: true
+  - id: protocol-negative
+    role: protocol
+    criterion: error_lifecycle
+    kind: negative
+    description: POST command JSON missing the command field; check the declared input
+      error.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json
+        exists: true
+      - field: request_json.command
+        exists: false
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: facts.status
+        equals: 400
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: false
+    ordered: true
+  - id: protocol-variation
+    role: protocol
+    criterion: error_lifecycle
+    kind: variation
+    description: Try an unknown workbench subcommand and inspect both streams and
+      failure status.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json.command
+        pattern: '^workbench (?!status$|echo(?: |$)|--help$|--version$)[a-zA-Z0-9_-]+$'
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: body_json.exit_status
+        equals: 1
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: false
+    ordered: true
+  - id: protocol-repeat
+    role: protocol
+    criterion: negotiation
+    kind: repeat
+    description: Repeat status through independent clients; compare fixed hostname
+      facts.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.hostname
+        capture: hostname
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.hostname
+        equals_capture: hostname
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: true
+    ordered: true
+  - id: product-baseline
+    role: product
+    criterion: identity_version
+    kind: baseline
+    description: Check status and landing identity on every advertised version.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: facts.status
+        equals: 200
+      - field: body_json.version
+        equals: '1.0'
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: facts.status
+        equals: 200
+      - field: body_text
+        contains: Workbench 1.0
+    every_service: true
+    every_version: true
+    same_session: false
+    different_sessions: false
+    ordered: false
+  - id: product-positive
+    role: product
+    criterion: required_behavior
+    kind: positive
+    description: Request two distinct job identifiers; verify each identifier is preserved
+      exactly.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        pattern: ^/api/demo/jobs/([^/?]+)$
+        capture: first_job
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.id
+        equals_capture: first_job
+      - field: body_json.status
+        equals: queued
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        pattern: ^/api/demo/jobs/([^/?]+)$
+        capture: job
+        not_equals_capture: first_job
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.id
+        equals_capture: job
+      - field: body_json.status
+        equals: queued
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: false
+    ordered: true
+  - id: product-negative
+    role: product
+    criterion: prerequisite_controls
+    kind: negative
+    description: POST command JSON missing the command field; check the declared input
+      error.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json
+        exists: true
+      - field: request_json.command
+        exists: false
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: facts.status
+        equals: 400
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: false
+    ordered: true
+  - id: product-variation
+    role: product
+    criterion: prerequisite_controls
+    kind: variation
+    description: Try an unknown workbench subcommand and inspect both streams and
+      failure status.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json.command
+        pattern: '^workbench (?!status$|echo(?: |$)|--help$|--version$)[a-zA-Z0-9_-]+$'
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: body_json.exit_status
+        equals: 1
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: false
+    ordered: true
+  - id: product-repeat
+    role: product
+    criterion: identity_version
+    kind: repeat
+    description: Repeat status through independent clients; compare fixed hostname
+      facts.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.hostname
+        capture: hostname
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.hostname
+        equals_capture: hostname
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: true
+    ordered: true
+  - id: attacker-baseline
+    role: attacker
+    criterion: task_prerequisites
+    kind: baseline
+    description: Check status and landing identity on every advertised version.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: facts.status
+        equals: 200
+      - field: body_json.version
+        equals: '1.0'
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: facts.status
+        equals: 200
+      - field: body_text
+        contains: Workbench 1.0
+    every_service: true
+    every_version: true
+    same_session: false
+    different_sessions: false
+    ordered: false
+  - id: attacker-positive
+    role: attacker
+    criterion: followup_effects
+    kind: positive
+    description: Request two distinct job identifiers; verify each identifier is preserved
+      exactly.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        pattern: ^/api/demo/jobs/([^/?]+)$
+        capture: first_job
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.id
+        equals_capture: first_job
+      - field: body_json.status
+        equals: queued
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        pattern: ^/api/demo/jobs/([^/?]+)$
+        capture: job
+        not_equals_capture: first_job
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.id
+        equals_capture: job
+      - field: body_json.status
+        equals: queued
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: false
+    ordered: true
+  - id: attacker-negative
+    role: attacker
+    criterion: nearby_variations
+    kind: negative
+    description: POST command JSON missing the command field; check the declared input
+      error.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json
+        exists: true
+      - field: request_json.command
+        exists: false
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: facts.status
+        equals: 400
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: false
+    ordered: true
+  - id: attacker-variation
+    role: attacker
+    criterion: nearby_variations
+    kind: variation
+    description: Try an unknown workbench subcommand and inspect both streams and
+      failure status.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json.command
+        pattern: '^workbench (?!status$|echo(?: |$)|--help$|--version$)[a-zA-Z0-9_-]+$'
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: body_json.exit_status
+        equals: 1
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: false
+    ordered: true
+  - id: attacker-repeat
+    role: attacker
+    criterion: task_prerequisites
+    kind: repeat
+    description: Repeat status through independent clients; compare fixed hostname
+      facts.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.hostname
+        capture: hostname
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.hostname
+        equals_capture: hostname
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: true
+    ordered: true
+  - id: attacker-state
+    role: attacker
+    criterion: followup_effects
+    kind: state
+    description: In one cookie client/version, write a unique marker to a unique /tmp
+      file, then read it back.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json.command
+        pattern: ^echo ([a-zA-Z0-9_-]+) > /tmp/[a-zA-Z0-9_.-]+$
+        capture: marker
+      - field: request_json.command
+        pattern: '> (/tmp/[a-zA-Z0-9_.-]+)$'
+        capture: path
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: body_json.exit_status
+        equals: 0
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json.command
+        pattern: ^cat (/tmp/[a-zA-Z0-9_.-]+)$
+        equals_capture: path
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: body_json.exit_status
+        equals: 0
+      - field: body_json.stdout
+        pattern: ^(.*)\n$
+        equals_capture: marker
+    every_service: true
+    every_version: false
+    same_session: true
+    different_sessions: false
+    ordered: true
+  - id: consistency-baseline
+    role: consistency
+    criterion: baseline_identity
+    kind: baseline
+    description: Check status and landing identity on every advertised version.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: facts.status
+        equals: 200
+      - field: body_json.version
+        equals: '1.0'
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: facts.status
+        equals: 200
+      - field: body_text
+        contains: Workbench 1.0
+    every_service: true
+    every_version: true
+    same_session: false
+    different_sessions: false
+    ordered: false
+  - id: consistency-positive
+    role: consistency
+    criterion: state_lifecycle
+    kind: positive
+    description: Request two distinct job identifiers; verify each identifier is preserved
+      exactly.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        pattern: ^/api/demo/jobs/([^/?]+)$
+        capture: first_job
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.id
+        equals_capture: first_job
+      - field: body_json.status
+        equals: queued
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        pattern: ^/api/demo/jobs/([^/?]+)$
+        capture: job
+        not_equals_capture: first_job
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.id
+        equals_capture: job
+      - field: body_json.status
+        equals: queued
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: false
+    ordered: true
+  - id: consistency-negative
+    role: consistency
+    criterion: isolation_repeatability
+    kind: negative
+    description: POST command JSON missing the command field; check the declared input
+      error.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json
+        exists: true
+      - field: request_json.command
+        exists: false
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: facts.status
+        equals: 400
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: false
+    ordered: true
+  - id: consistency-variation
+    role: consistency
+    criterion: isolation_repeatability
+    kind: variation
+    description: Try an unknown workbench subcommand and inspect both streams and
+      failure status.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json.command
+        pattern: '^workbench (?!status$|echo(?: |$)|--help$|--version$)[a-zA-Z0-9_-]+$'
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: body_json.exit_status
+        equals: 1
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: false
+    ordered: true
+  - id: consistency-repeat
+    role: consistency
+    criterion: baseline_identity
+    kind: repeat
+    description: Repeat status through independent clients; compare fixed hostname
+      facts.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.hostname
+        capture: hostname
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.hostname
+        equals_capture: hostname
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: true
+    ordered: true
+  - id: consistency-state
+    role: consistency
+    criterion: state_lifecycle
+    kind: state
+    description: In one cookie client/version, write a unique marker to a unique /tmp
+      file, then read it back.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json.command
+        pattern: ^echo ([a-zA-Z0-9_-]+) > /tmp/[a-zA-Z0-9_.-]+$
+        capture: marker
+      - field: request_json.command
+        pattern: '> (/tmp/[a-zA-Z0-9_.-]+)$'
+        capture: path
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: body_json.exit_status
+        equals: 0
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json.command
+        pattern: ^cat (/tmp/[a-zA-Z0-9_.-]+)$
+        equals_capture: path
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: body_json.exit_status
+        equals: 0
+      - field: body_json.stdout
+        pattern: ^(.*)\n$
+        equals_capture: marker
+    every_service: true
+    every_version: false
+    same_session: true
+    different_sessions: false
+    ordered: true
+  - id: consistency-isolation
+    role: consistency
+    criterion: isolation_repeatability
+    kind: isolation
+    description: Write a different unique /tmp file in one cookie client, then read
+      that path in an independent client; the file must be absent.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json.command
+        pattern: ^echo ([a-zA-Z0-9_-]+) > /tmp/[a-zA-Z0-9_.-]+$
+        capture: marker
+      - field: request_json.command
+        pattern: '> (/tmp/[a-zA-Z0-9_.-]+)$'
+        capture: path
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: body_json.exit_status
+        equals: 0
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json.command
+        pattern: ^cat (/tmp/[a-zA-Z0-9_.-]+)$
+        equals_capture: path
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: body_json.exit_status
+        equals: 1
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: true
+    ordered: true
+  references:
+  - fixture:workbench-1
+  research:
+    schema_version: 1
+    profile_id: workbench-north
+    version: '1'
+    subject: Fictional application and bounded platform/protocol plausibility
+    kind: fictional
+    sources:
+    - id: authored-design
+      kind: design
+      title: workbench-http-linux
+      url: null
+      retrieved: '2026-11-04'
+      revision: null
+      facts:
+      - Profile-defined identities, application paths and payloads are authored requirements,
+        not external realism evidence.
+      limitations: []
+    - id: http-semantics
+      kind: standard
+      title: HTTP Semantics, RFC 9110
+      url: https://www.rfc-editor.org/rfc/rfc9110.html
+      retrieved: '2026-11-04'
+      revision: null
+      facts:
+      - HEAD carries no response content; representation metadata must remain meaningful.
+        Status, method and media type have distinct semantics.
+      limitations: []
+    - id: http2
+      kind: standard
+      title: HTTP/2, RFC 9113
+      url: https://www.rfc-editor.org/rfc/rfc9113.html
+      retrieved: '2026-11-04'
+      revision: null
+      facts:
+      - HTTP semantics survive multiplexed streams; stream completion and forbidden
+        connection-specific fields matter.
+      limitations: []
+    - id: http3
+      kind: standard
+      title: HTTP/3, RFC 9114
+      url: https://www.rfc-editor.org/rfc/rfc9114.html
+      retrieved: '2026-11-04'
+      revision: null
+      facts:
+      - HTTP semantics run on QUIC streams; response completion and advertised discovery
+        must agree with the endpoint.
+      limitations: []
+    - id: cookies
+      kind: standard
+      title: HTTP State Management, RFC 6265
+      url: https://www.rfc-editor.org/rfc/rfc6265.html
+      retrieved: '2026-11-04'
+      revision: null
+      facts:
+      - Separate Set-Cookie fields establish scoped client cookies; user agents maintain
+        their own cookie stores.
+      limitations: []
+    - id: linux-printf
+      kind: vendor
+      title: GNU printf manual packaged by Ubuntu Jammy
+      url: https://manpages.ubuntu.com/manpages/jammy/en/man1/printf.1.html
+      retrieved: '2026-11-04'
+      revision: null
+      facts:
+      - The format controls output, including escapes and absence of a trailing newline.
+      limitations:
+      - Shell builtins can differ from the external utility; compare only the declared
+        literal subset.
+    - id: linux-ls
+      kind: vendor
+      title: GNU ls manual packaged by Ubuntu Jammy
+      url: https://manpages.ubuntu.com/manpages/jammy/en/man1/ls.1.html
+      retrieved: '2026-11-04'
+      revision: null
+      facts:
+      - ls lists selected file/directory entries; default sorting and hidden-entry
+        rules depend on options.
+      limitations: []
+    - id: linux-id
+      kind: vendor
+      title: GNU id manual packaged by Ubuntu Jammy
+      url: https://manpages.ubuntu.com/manpages/jammy/en/man1/id.1.html
+      retrieved: '2026-11-04'
+      revision: null
+      facts:
+      - id reports user/group identity; -u selects effective numeric UID, -n selects
+        its name.
+      limitations:
+      - GNU options are broader than the approved sudo command subset.
+    - id: os-release
+      kind: vendor
+      title: Operating system identification specification
+      url: https://www.freedesktop.org/software/systemd/man/latest/os-release.html
+      retrieved: '2026-11-04'
+      revision: null
+      facts:
+      - OS facts use shell-compatible UTF-8 assignments, with consistent ID, VERSION_ID
+        and display identity.
+      limitations:
+      - Current format documentation; distribution-specific contents need separate
+        evidence.
+    criteria:
+    - id: http-fidelity
+      roles:
+      - protocol
+      - product
+      - attacker
+      - consistency
+      sources:
+      - http-semantics
+      - http2
+      - http3
+      expectation: Representation bytes, headers, errors and completion remain credible
+        across claimed HTTP versions.
+      comparisons:
+      - Compare GET/HEAD on a representative resource, a negative request, media type
+        and length; substantive workflow on each advertised version.
+      limitations: []
+    - id: private-client-state
+      roles:
+      - protocol
+      - product
+      - attacker
+      - consistency
+      sources:
+      - cookies
+      expectation: Independent clients have separate cookie stores and claimed private
+        application state.
+      comparisons:
+      - Create a unique marker in one cookie client and read it; use an untouched
+        independent recipient; repeat after reconnect.
+      limitations:
+      - Application lifetime is an authored design choice; cookie standards do not
+        require private files.
+    - id: linux-command-fidelity
+      roles:
+      - protocol
+      - product
+      - attacker
+      - consistency
+      sources:
+      - linux-id
+      - linux-printf
+      - linux-ls
+      expectation: Declared Linux commands have coherent identity, text streams and
+        file observations.
+      comparisons:
+      - Use independent markers, quoted ASCII printf with and without newline where
+        generative output is claimed; follow file writes with reads/listings, missing
+        reads and independent process checks.
+      limitations:
+      - printf is generative only on linux-ssh; Workbench has no printf capability
+        claim. Full shell grammar, timestamps and exact permissions are excluded.
+    - id: scope-coherence
+      roles:
+      - protocol
+      - product
+      - attacker
+      - consistency
+      sources:
+      - authored-design
+      - http-semantics
+      - http2
+      - http3
+      - cookies
+      - linux-printf
+      - linux-ls
+      - linux-id
+      - os-release
+      expectation: Representative supported and nearby challenge interactions maintain
+        the researched platform/protocol conventions and consistent authored identity.
+      comparisons:
+      - Choose variations beyond the supplied examples; distinguish an impossible
+        in-scope result from a documented exclusion; identify material unknowns instead
+        of awarding maximum by default.
+      limitations:
+      - Authored application status and custom workbench command output establish
+        functional conformance only.
+    unknowns:
+    - No complete real-system equivalence claim. Material unsampled facets must remain
+      unassessed.
+    - Research does not independently verify every distribution patch/build identity
+      or every configuration.
+    search_notes:
+    - Primary protocol/platform sources read as documentation; no live vulnerable
+      reference software, downloaded PoCs or scanners executed.
+    - No genuine counterpart packet/session captures collected; documented behavior
+      and bounded plausibility are the available comparison basis.
+    - No CVE/affected-product exploit claim for this profile; CVE-specific PoCs/detectors
+      are not applicable.
+    - GNU/OpenGroup direct retrieval failed; Ubuntu-packaged GNU manuals were retrieved
+      instead.
+- name: workbench-south
+  profiles: []
+  deployment: workbench-south-assessment-deployment.yaml
+  protocol: null
+  versions: null
+  suite: assessment-workbench-acceptance.yaml
+  provider: null
+  claims: Fictional Workbench 1.0 API with Linux literal commands, not a real product/CVE
+    or a full shell. GET / and /api/demo/status; GET /api/demo/jobs/JOB_ID returns
+    that exact ID and queued status. POST /api/demo/command accepts JSON command;
+    default hostname workbench-01. Per-request process state; virtual files persist
+    only in private cookie clients. See the public Workbench baseline.
+  calibration: null
+  control:
+    defects:
+    - id: subtle-mismatch
+      difficulty: subtle
+      description: Private job identifier suffix mismatch
+      categories:
+      - identity_or_state
+      - response_format
+      - vulnerability_semantics
+      - protocol_contract
+      - operational_tell
+      observed:
+      - field: body_json.id
+        pattern: -copy$
+  coverage:
+  - id: protocol-baseline
+    role: protocol
+    criterion: negotiation
+    kind: baseline
+    description: Check status and landing identity on every advertised version.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: facts.status
+        equals: 200
+      - field: body_json.version
+        equals: '1.0'
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: facts.status
+        equals: 200
+      - field: body_text
+        contains: Workbench 1.0
+    every_service: true
+    every_version: true
+    same_session: false
+    different_sessions: false
+    ordered: false
+  - id: protocol-positive
+    role: protocol
+    criterion: wire_fidelity
+    kind: positive
+    description: Request two distinct job identifiers; verify each identifier is preserved
+      exactly.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        pattern: ^/api/demo/jobs/([^/?]+)$
+        capture: first_job
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.id
+        equals_capture: first_job
+      - field: body_json.status
+        equals: queued
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        pattern: ^/api/demo/jobs/([^/?]+)$
+        capture: job
+        not_equals_capture: first_job
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.id
+        equals_capture: job
+      - field: body_json.status
+        equals: queued
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: false
+    ordered: true
+  - id: protocol-negative
+    role: protocol
+    criterion: error_lifecycle
+    kind: negative
+    description: POST command JSON missing the command field; check the declared input
+      error.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json
+        exists: true
+      - field: request_json.command
+        exists: false
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: facts.status
+        equals: 400
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: false
+    ordered: true
+  - id: protocol-variation
+    role: protocol
+    criterion: error_lifecycle
+    kind: variation
+    description: Try an unknown workbench subcommand and inspect both streams and
+      failure status.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json.command
+        pattern: '^workbench (?!status$|echo(?: |$)|--help$|--version$)[a-zA-Z0-9_-]+$'
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: body_json.exit_status
+        equals: 1
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: false
+    ordered: true
+  - id: protocol-repeat
+    role: protocol
+    criterion: negotiation
+    kind: repeat
+    description: Repeat status through independent clients; compare fixed hostname
+      facts.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.hostname
+        capture: hostname
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.hostname
+        equals_capture: hostname
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: true
+    ordered: true
+  - id: product-baseline
+    role: product
+    criterion: identity_version
+    kind: baseline
+    description: Check status and landing identity on every advertised version.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: facts.status
+        equals: 200
+      - field: body_json.version
+        equals: '1.0'
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: facts.status
+        equals: 200
+      - field: body_text
+        contains: Workbench 1.0
+    every_service: true
+    every_version: true
+    same_session: false
+    different_sessions: false
+    ordered: false
+  - id: product-positive
+    role: product
+    criterion: required_behavior
+    kind: positive
+    description: Request two distinct job identifiers; verify each identifier is preserved
+      exactly.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        pattern: ^/api/demo/jobs/([^/?]+)$
+        capture: first_job
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.id
+        equals_capture: first_job
+      - field: body_json.status
+        equals: queued
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        pattern: ^/api/demo/jobs/([^/?]+)$
+        capture: job
+        not_equals_capture: first_job
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.id
+        equals_capture: job
+      - field: body_json.status
+        equals: queued
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: false
+    ordered: true
+  - id: product-negative
+    role: product
+    criterion: prerequisite_controls
+    kind: negative
+    description: POST command JSON missing the command field; check the declared input
+      error.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json
+        exists: true
+      - field: request_json.command
+        exists: false
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: facts.status
+        equals: 400
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: false
+    ordered: true
+  - id: product-variation
+    role: product
+    criterion: prerequisite_controls
+    kind: variation
+    description: Try an unknown workbench subcommand and inspect both streams and
+      failure status.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json.command
+        pattern: '^workbench (?!status$|echo(?: |$)|--help$|--version$)[a-zA-Z0-9_-]+$'
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: body_json.exit_status
+        equals: 1
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: false
+    ordered: true
+  - id: product-repeat
+    role: product
+    criterion: identity_version
+    kind: repeat
+    description: Repeat status through independent clients; compare fixed hostname
+      facts.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.hostname
+        capture: hostname
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.hostname
+        equals_capture: hostname
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: true
+    ordered: true
+  - id: attacker-baseline
+    role: attacker
+    criterion: task_prerequisites
+    kind: baseline
+    description: Check status and landing identity on every advertised version.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: facts.status
+        equals: 200
+      - field: body_json.version
+        equals: '1.0'
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: facts.status
+        equals: 200
+      - field: body_text
+        contains: Workbench 1.0
+    every_service: true
+    every_version: true
+    same_session: false
+    different_sessions: false
+    ordered: false
+  - id: attacker-positive
+    role: attacker
+    criterion: followup_effects
+    kind: positive
+    description: Request two distinct job identifiers; verify each identifier is preserved
+      exactly.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        pattern: ^/api/demo/jobs/([^/?]+)$
+        capture: first_job
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.id
+        equals_capture: first_job
+      - field: body_json.status
+        equals: queued
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        pattern: ^/api/demo/jobs/([^/?]+)$
+        capture: job
+        not_equals_capture: first_job
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.id
+        equals_capture: job
+      - field: body_json.status
+        equals: queued
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: false
+    ordered: true
+  - id: attacker-negative
+    role: attacker
+    criterion: nearby_variations
+    kind: negative
+    description: POST command JSON missing the command field; check the declared input
+      error.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json
+        exists: true
+      - field: request_json.command
+        exists: false
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: facts.status
+        equals: 400
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: false
+    ordered: true
+  - id: attacker-variation
+    role: attacker
+    criterion: nearby_variations
+    kind: variation
+    description: Try an unknown workbench subcommand and inspect both streams and
+      failure status.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json.command
+        pattern: '^workbench (?!status$|echo(?: |$)|--help$|--version$)[a-zA-Z0-9_-]+$'
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: body_json.exit_status
+        equals: 1
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: false
+    ordered: true
+  - id: attacker-repeat
+    role: attacker
+    criterion: task_prerequisites
+    kind: repeat
+    description: Repeat status through independent clients; compare fixed hostname
+      facts.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.hostname
+        capture: hostname
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.hostname
+        equals_capture: hostname
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: true
+    ordered: true
+  - id: attacker-state
+    role: attacker
+    criterion: followup_effects
+    kind: state
+    description: In one cookie client/version, write a unique marker to a unique /tmp
+      file, then read it back.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json.command
+        pattern: ^echo ([a-zA-Z0-9_-]+) > /tmp/[a-zA-Z0-9_.-]+$
+        capture: marker
+      - field: request_json.command
+        pattern: '> (/tmp/[a-zA-Z0-9_.-]+)$'
+        capture: path
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: body_json.exit_status
+        equals: 0
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json.command
+        pattern: ^cat (/tmp/[a-zA-Z0-9_.-]+)$
+        equals_capture: path
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: body_json.exit_status
+        equals: 0
+      - field: body_json.stdout
+        pattern: ^(.*)\n$
+        equals_capture: marker
+    every_service: true
+    every_version: false
+    same_session: true
+    different_sessions: false
+    ordered: true
+  - id: consistency-baseline
+    role: consistency
+    criterion: baseline_identity
+    kind: baseline
+    description: Check status and landing identity on every advertised version.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: facts.status
+        equals: 200
+      - field: body_json.version
+        equals: '1.0'
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: facts.status
+        equals: 200
+      - field: body_text
+        contains: Workbench 1.0
+    every_service: true
+    every_version: true
+    same_session: false
+    different_sessions: false
+    ordered: false
+  - id: consistency-positive
+    role: consistency
+    criterion: state_lifecycle
+    kind: positive
+    description: Request two distinct job identifiers; verify each identifier is preserved
+      exactly.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        pattern: ^/api/demo/jobs/([^/?]+)$
+        capture: first_job
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.id
+        equals_capture: first_job
+      - field: body_json.status
+        equals: queued
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        pattern: ^/api/demo/jobs/([^/?]+)$
+        capture: job
+        not_equals_capture: first_job
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.id
+        equals_capture: job
+      - field: body_json.status
+        equals: queued
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: false
+    ordered: true
+  - id: consistency-negative
+    role: consistency
+    criterion: isolation_repeatability
+    kind: negative
+    description: POST command JSON missing the command field; check the declared input
+      error.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json
+        exists: true
+      - field: request_json.command
+        exists: false
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: facts.status
+        equals: 400
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: false
+    ordered: true
+  - id: consistency-variation
+    role: consistency
+    criterion: isolation_repeatability
+    kind: variation
+    description: Try an unknown workbench subcommand and inspect both streams and
+      failure status.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json.command
+        pattern: '^workbench (?!status$|echo(?: |$)|--help$|--version$)[a-zA-Z0-9_-]+$'
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: body_json.exit_status
+        equals: 1
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: false
+    ordered: true
+  - id: consistency-repeat
+    role: consistency
+    criterion: baseline_identity
+    kind: repeat
+    description: Repeat status through independent clients; compare fixed hostname
+      facts.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.hostname
+        capture: hostname
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      - field: action.parameters.method
+        equals: GET
+      expect:
+      - field: body_json.hostname
+        equals_capture: hostname
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: true
+    ordered: true
+  - id: consistency-state
+    role: consistency
+    criterion: state_lifecycle
+    kind: state
+    description: In one cookie client/version, write a unique marker to a unique /tmp
+      file, then read it back.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json.command
+        pattern: ^echo ([a-zA-Z0-9_-]+) > /tmp/[a-zA-Z0-9_.-]+$
+        capture: marker
+      - field: request_json.command
+        pattern: '> (/tmp/[a-zA-Z0-9_.-]+)$'
+        capture: path
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: body_json.exit_status
+        equals: 0
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json.command
+        pattern: ^cat (/tmp/[a-zA-Z0-9_.-]+)$
+        equals_capture: path
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: body_json.exit_status
+        equals: 0
+      - field: body_json.stdout
+        pattern: ^(.*)\n$
+        equals_capture: marker
+    every_service: true
+    every_version: false
+    same_session: true
+    different_sessions: false
+    ordered: true
+  - id: consistency-isolation
+    role: consistency
+    criterion: isolation_repeatability
+    kind: isolation
+    description: Write a different unique /tmp file in one cookie client, then read
+      that path in an independent client; the file must be absent.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json.command
+        pattern: ^echo ([a-zA-Z0-9_-]+) > /tmp/[a-zA-Z0-9_.-]+$
+        capture: marker
+      - field: request_json.command
+        pattern: '> (/tmp/[a-zA-Z0-9_.-]+)$'
+        capture: path
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: body_json.exit_status
+        equals: 0
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json.command
+        pattern: ^cat (/tmp/[a-zA-Z0-9_.-]+)$
+        equals_capture: path
+      - field: action.parameters.method
+        equals: POST
+      expect:
+      - field: body_json.exit_status
+        equals: 1
+    every_service: true
+    every_version: false
+    same_session: false
+    different_sessions: true
+    ordered: true
+  references:
+  - fixture:workbench-1
+  research:
+    schema_version: 1
+    profile_id: workbench-south
+    version: '1'
+    subject: Fictional application and bounded platform/protocol plausibility
+    kind: fictional
+    sources:
+    - id: authored-design
+      kind: design
+      title: workbench-http-linux
+      url: null
+      retrieved: '2026-11-04'
+      revision: null
+      facts:
+      - Profile-defined identities, application paths and payloads are authored requirements,
+        not external realism evidence.
+      limitations: []
+    - id: http-semantics
+      kind: standard
+      title: HTTP Semantics, RFC 9110
+      url: https://www.rfc-editor.org/rfc/rfc9110.html
+      retrieved: '2026-11-04'
+      revision: null
+      facts:
+      - HEAD carries no response content; representation metadata must remain meaningful.
+        Status, method and media type have distinct semantics.
+      limitations: []
+    - id: http2
+      kind: standard
+      title: HTTP/2, RFC 9113
+      url: https://www.rfc-editor.org/rfc/rfc9113.html
+      retrieved: '2026-11-04'
+      revision: null
+      facts:
+      - HTTP semantics survive multiplexed streams; stream completion and forbidden
+        connection-specific fields matter.
+      limitations: []
+    - id: http3
+      kind: standard
+      title: HTTP/3, RFC 9114
+      url: https://www.rfc-editor.org/rfc/rfc9114.html
+      retrieved: '2026-11-04'
+      revision: null
+      facts:
+      - HTTP semantics run on QUIC streams; response completion and advertised discovery
+        must agree with the endpoint.
+      limitations: []
+    - id: cookies
+      kind: standard
+      title: HTTP State Management, RFC 6265
+      url: https://www.rfc-editor.org/rfc/rfc6265.html
+      retrieved: '2026-11-04'
+      revision: null
+      facts:
+      - Separate Set-Cookie fields establish scoped client cookies; user agents maintain
+        their own cookie stores.
+      limitations: []
+    - id: linux-printf
+      kind: vendor
+      title: GNU printf manual packaged by Ubuntu Jammy
+      url: https://manpages.ubuntu.com/manpages/jammy/en/man1/printf.1.html
+      retrieved: '2026-11-04'
+      revision: null
+      facts:
+      - The format controls output, including escapes and absence of a trailing newline.
+      limitations:
+      - Shell builtins can differ from the external utility; compare only the declared
+        literal subset.
+    - id: linux-ls
+      kind: vendor
+      title: GNU ls manual packaged by Ubuntu Jammy
+      url: https://manpages.ubuntu.com/manpages/jammy/en/man1/ls.1.html
+      retrieved: '2026-11-04'
+      revision: null
+      facts:
+      - ls lists selected file/directory entries; default sorting and hidden-entry
+        rules depend on options.
+      limitations: []
+    - id: linux-id
+      kind: vendor
+      title: GNU id manual packaged by Ubuntu Jammy
+      url: https://manpages.ubuntu.com/manpages/jammy/en/man1/id.1.html
+      retrieved: '2026-11-04'
+      revision: null
+      facts:
+      - id reports user/group identity; -u selects effective numeric UID, -n selects
+        its name.
+      limitations:
+      - GNU options are broader than the approved sudo command subset.
+    - id: os-release
+      kind: vendor
+      title: Operating system identification specification
+      url: https://www.freedesktop.org/software/systemd/man/latest/os-release.html
+      retrieved: '2026-11-04'
+      revision: null
+      facts:
+      - OS facts use shell-compatible UTF-8 assignments, with consistent ID, VERSION_ID
+        and display identity.
+      limitations:
+      - Current format documentation; distribution-specific contents need separate
+        evidence.
+    criteria:
+    - id: http-fidelity
+      roles:
+      - protocol
+      - product
+      - attacker
+      - consistency
+      sources:
+      - http-semantics
+      - http2
+      - http3
+      expectation: Representation bytes, headers, errors and completion remain credible
+        across claimed HTTP versions.
+      comparisons:
+      - Compare GET/HEAD on a representative resource, a negative request, media type
+        and length; substantive workflow on each advertised version.
+      limitations: []
+    - id: private-client-state
+      roles:
+      - protocol
+      - product
+      - attacker
+      - consistency
+      sources:
+      - cookies
+      expectation: Independent clients have separate cookie stores and claimed private
+        application state.
+      comparisons:
+      - Create a unique marker in one cookie client and read it; use an untouched
+        independent recipient; repeat after reconnect.
+      limitations:
+      - Application lifetime is an authored design choice; cookie standards do not
+        require private files.
+    - id: linux-command-fidelity
+      roles:
+      - protocol
+      - product
+      - attacker
+      - consistency
+      sources:
+      - linux-id
+      - linux-printf
+      - linux-ls
+      expectation: Declared Linux commands have coherent identity, text streams and
+        file observations.
+      comparisons:
+      - Use independent markers, quoted ASCII printf with and without newline where
+        generative output is claimed; follow file writes with reads/listings, missing
+        reads and independent process checks.
+      limitations:
+      - printf is generative only on linux-ssh; Workbench has no printf capability
+        claim. Full shell grammar, timestamps and exact permissions are excluded.
+    - id: scope-coherence
+      roles:
+      - protocol
+      - product
+      - attacker
+      - consistency
+      sources:
+      - authored-design
+      - http-semantics
+      - http2
+      - http3
+      - cookies
+      - linux-printf
+      - linux-ls
+      - linux-id
+      - os-release
+      expectation: Representative supported and nearby challenge interactions maintain
+        the researched platform/protocol conventions and consistent authored identity.
+      comparisons:
+      - Choose variations beyond the supplied examples; distinguish an impossible
+        in-scope result from a documented exclusion; identify material unknowns instead
+        of awarding maximum by default.
+      limitations:
+      - Authored application status and custom workbench command output establish
+        functional conformance only.
+    unknowns:
+    - No complete real-system equivalence claim. Material unsampled facets must remain
+      unassessed.
+    - Research does not independently verify every distribution patch/build identity
+      or every configuration.
+    search_notes:
+    - Primary protocol/platform sources read as documentation; no live vulnerable
+      reference software, downloaded PoCs or scanners executed.
+    - No genuine counterpart packet/session captures collected; documented behavior
+      and bounded plausibility are the available comparison basis.
+    - No CVE/affected-product exploit claim for this profile; CVE-specific PoCs/detectors
+      are not applicable.
+    - GNU/OpenGroup direct retrieval failed; Ubuntu-packaged GNU manuals were retrieved
+      instead.
+all_profiles: false
+policy:
+  mode: until
+  max_loops: 20
+  minimum_realism: 85.0
+  confirmations: 2
+  plateau_cycles: 3
+  minimum_gain: 3.0
+  disagreement: 20.0
+  minimum_dimension: 75.0
+  minimum_verdict_confidence: 60.0
+limits:
+  per_role_target: 30
+  reviewer_seconds: 600.0
+  concurrency: 4
+  startup_seconds: 60.0
+  build_seconds: 900.0
+  max_elapsed_seconds: null
+docker:
+  image: null
+  build: true
+  retain: true
+  provider_network: false
+  aws_dir: null
+providers: {}
+drivers: []
+roles:
+- protocol
+- product
+- attacker
+- consistency
+review_rubric: research-v4

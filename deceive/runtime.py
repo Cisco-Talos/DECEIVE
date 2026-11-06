@@ -138,7 +138,9 @@ class Runtime:
             "task_name": session_id, "protocol_instance": listener.name,
             "sensor_protocol": listener.protocol, "profile_id": profile.id,
             "profile_version": profile.version, "profile_fingerprint": fingerprint(profile),
-            "deception_profiles": [{"id": p.id, "version": p.version,
+            "instance_id": profile.instance_id or profile.id,
+            "organization_id": profile.organization_id,
+            "deception_profiles": [{"id": p.id, "version": p.version, "instance_id": p.instance_id or p.id,
                                     "fingerprint": fingerprint(p)}
                                    for p in self.plan.members[listener.name]],
             "src_ip": source[0] if source else "-", "src_port": source[1] if source else "-",
@@ -180,29 +182,45 @@ class Runtime:
                         raise ValueError("SSH input exceeds configured limit")
                     self.emit(session, "User input", details=encode(raw),
                               request_id=interaction.request_id, **fields)
-                    result = await self._dispatch(session, interaction)
+                    # Mutations are private until every output/state check has passed.
+                    staged = replace(session, state=dict(session.state),
+                                     virtual_files=dict(session.virtual_files),
+                                     virtual_directories=set(session.virtual_directories),
+                                     removed_files=set(session.removed_files))
+                    result = await self._dispatch(staged, interaction)
                     owner = self.plan.owners[session.listener].get(result.behavior)
+                    if owner is None and len(self.plan.members[session.listener]) == 1:
+                        owner = self.plan.members[session.listener][0]
                     if owner:
                         fields.update(deception_profile_id=owner.id,
+                                      deception_instance_id=owner.instance_id or owner.id,
                                       deception_profile_version=owner.version)
                     if len(result.body) + len(result.stderr) > self.limits.output_bytes:
                         raise ValueError("Response exceeds configured limit")
                     if interaction.protocol == "ssh":
                         if type(result.exit_status) is not int or not 0 <= result.exit_status <= 255:
                             raise ValueError("Invalid SSH exit status")
-                        session.last_exit_status = result.exit_status
                         fields.update(ssh_stdout=encode(result.body), ssh_stderr=encode(result.stderr),
                                       ssh_exit_status=result.exit_status)
                     elif result.stderr:
                         raise ValueError("stderr is only supported for SSH responses")
-                    if len(session.state | result.transition) > 128 or any(
+                    if len(staged.state | result.transition) > 128 or any(
                         not isinstance(k, str) or not isinstance(v, str) or len(k) > 128 or len(v) > 4096
                         for k, v in result.transition.items()
                     ):
                         raise ValueError("Invalid state transition")
                     if set(result.transition) & {"hostname", "os", "kernel", "architecture"}:
                         raise ValueError("State transitions cannot change deployment identity")
-                    session.state.update(result.transition)
+                    staged.state.update(result.transition)
+                    if self.profiles[session.listener].schema_version == 2:
+                        from deceive.commands import check_capacity
+                        check_capacity(staged)
+                    session.state = staged.state
+                    session.virtual_files = staged.virtual_files
+                    session.virtual_directories = staged.virtual_directories
+                    session.removed_files = staged.removed_files
+                    if interaction.protocol == 'ssh':
+                        session.last_exit_status = result.exit_status
                     session.touched = time.monotonic()
                     assistant = ((result.body + result.stderr).decode("utf-8", "replace"))
                     if interaction.protocol == "ssh" and self.profiles[session.listener].ssh_response_format == "json":
@@ -213,6 +231,8 @@ class Runtime:
                     self.emit(session, "LLM response" if result.origin == "llm" else "Deception response",
                               details=encode(result.model_output if result.model_output is not None else result.body),
                               response_origin=result.origin,
+                              response_stage="final",
+                              response_body_base64=encode(result.body),
                               behavior=result.behavior, request_id=interaction.request_id,
                               http_status=result.status, **fields)
                     return result
@@ -221,6 +241,15 @@ class Runtime:
 
     async def _dispatch(self, session: Session, interaction: Interaction) -> Response:
         profile = self.profiles[session.listener]
+        from deceive import contracts, commands
+        if profile.contracts:
+            result = await contracts.respond(self, profile, session, interaction)
+            if result is not None:
+                return result
+        if profile.command_environment and interaction.protocol == 'ssh':
+            result = await commands.respond(self, profile, session, interaction)
+            if result is not None:
+                return result
         for spec in profile.behaviors:
             if not matches(spec, interaction, session):
                 continue
@@ -232,7 +261,8 @@ class Runtime:
             if result is not None:
                 result.behavior = spec.id
                 return result
-        if profile.fallback == "reject":
+        if profile.fallback == "reject" or (profile.fallback == "llm_if_available" and
+                                            not self.listeners[session.listener].provider):
             return make_response(profile.fallback_reply)
         listener = self.listeners[session.listener]
         raw = interaction.command if interaction.protocol == "ssh" else json.dumps({
@@ -243,8 +273,9 @@ class Runtime:
         })
         files = profile.files
         directories = []
-        if virtual_files.enabled(profile):
-            current_files, current_dirs = virtual_files.view(profile, session)
+        if virtual_files.enabled(profile) or profile.command_environment:
+            current_files, current_dirs = (commands.file_view(profile, session) if profile.command_environment
+                                          else virtual_files.view(profile, session))
             files = {path: body.decode("utf-8", "replace") for path, body in current_files.items()}
             directories = sorted(current_dirs)
         facts = json.dumps({"identity": profile.identity.model_dump(), "files": files,
@@ -266,8 +297,10 @@ class Runtime:
                 except (ValueError, TypeError, RecursionError):
                     self.emit(session, "LLM response", details=encode(text), response_origin="llm",
                               behavior="llm", request_id=interaction.request_id,
-                              interactive=interaction.interactive, ssh_response_error="invalid_format")
-                    raise ProviderError("Model returned an invalid SSH response") from None
+                              interactive=interaction.interactive, ssh_response_error="invalid_format",
+                              response_stage="attempt", attempt=1)
+                    return Response(stderr=b"Session unavailable.\n", exit_status=1,
+                                    close=True, behavior="invalid-model-reply")
             return Response(body=text.encode(), behavior="llm", origin="llm", model_output=text)
         try:
             reply = Reply.model_validate(json.loads(text))

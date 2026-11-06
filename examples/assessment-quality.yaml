@@ -1,0 +1,574 @@
+# Frozen coverage and private controls. Give reviewers only public begin-loop JSON and the baseline document.
+schema_version: 1
+review_rubric: evidence-v3
+policy:
+  mode: until
+  max_loops: 20
+  minimum_realism: 85
+  minimum_dimension: 75
+  minimum_verdict_confidence: 60
+  confirmations: 2
+limits:
+  per_role_target: 30
+  reviewer_seconds: 600
+  concurrency: 4
+docker:
+  build: true
+  retain: true
+targets:
+- name: workbench
+  claims: Fictional Workbench 1.0 API with Linux literal commands, not a real product/CVE
+    or a full shell. GET / and /api/demo/status; GET /api/demo/jobs/JOB_ID returns
+    that exact ID and queued status. POST /api/demo/command accepts JSON command;
+    default hostname workbench-01. Per-request process state; virtual files persist
+    only in private cookie clients. See the public Workbench baseline.
+  references:
+  - fixture:workbench-1
+  coverage: &id006
+  - id: protocol-baseline
+    role: protocol
+    criterion: negotiation
+    kind: baseline
+    description: Check status and landing identity on every advertised version.
+    steps:
+    - select: &id001
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/status
+      expect:
+      - field: facts.status
+        equals: 200
+      - field: body_json.version
+        equals: '1.0'
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /
+      expect:
+      - field: facts.status
+        equals: 200
+      - field: body_text
+        contains: Workbench 1.0
+    every_version: true
+    ordered: false
+  - id: protocol-positive
+    role: protocol
+    criterion: wire_fidelity
+    kind: positive
+    description: Request two distinct job identifiers; verify each identifier is preserved
+      exactly.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        pattern: ^/api/demo/jobs/([^/?]+)$
+        capture: first_job
+      expect:
+      - field: body_json.id
+        equals_capture: first_job
+      - field: body_json.status
+        equals: queued
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        pattern: ^/api/demo/jobs/([^/?]+)$
+        capture: job
+        not_equals_capture: first_job
+      expect:
+      - field: body_json.id
+        equals_capture: job
+      - field: body_json.status
+        equals: queued
+  - id: protocol-negative
+    role: protocol
+    criterion: error_lifecycle
+    kind: negative
+    description: POST command JSON missing the command field; check the declared input
+      error.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json
+        exists: true
+      - field: request_json.command
+        exists: false
+      expect:
+      - field: facts.status
+        equals: 400
+  - id: protocol-variation
+    role: protocol
+    criterion: error_lifecycle
+    kind: variation
+    description: Try an unknown workbench subcommand and inspect both streams and
+      failure status.
+    steps:
+    - select:
+      - &id002
+        field: action.operation
+        equals: request
+      - &id003
+        field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json.command
+        pattern: '^workbench (?!status$|echo(?: |$)|--help$|--version$)[a-zA-Z0-9_-]+$'
+      expect:
+      - field: body_json.exit_status
+        equals: 1
+  - id: protocol-repeat
+    role: protocol
+    criterion: negotiation
+    kind: repeat
+    description: Repeat status through independent clients; compare fixed hostname
+      facts.
+    steps:
+    - select: *id001
+      expect:
+      - field: body_json.hostname
+        capture: hostname
+    - select: *id001
+      expect:
+      - field: body_json.hostname
+        equals_capture: hostname
+    different_sessions: true
+  - id: product-baseline
+    role: product
+    criterion: identity_version
+    kind: baseline
+    description: Check status and landing identity on every advertised version.
+    steps:
+    - select: *id001
+      expect:
+      - field: facts.status
+        equals: 200
+      - field: body_json.version
+        equals: '1.0'
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /
+      expect:
+      - field: facts.status
+        equals: 200
+      - field: body_text
+        contains: Workbench 1.0
+    every_version: true
+    ordered: false
+  - id: product-positive
+    role: product
+    criterion: required_behavior
+    kind: positive
+    description: Request two distinct job identifiers; verify each identifier is preserved
+      exactly.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        pattern: ^/api/demo/jobs/([^/?]+)$
+        capture: first_job
+      expect:
+      - field: body_json.id
+        equals_capture: first_job
+      - field: body_json.status
+        equals: queued
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        pattern: ^/api/demo/jobs/([^/?]+)$
+        capture: job
+        not_equals_capture: first_job
+      expect:
+      - field: body_json.id
+        equals_capture: job
+      - field: body_json.status
+        equals: queued
+  - id: product-negative
+    role: product
+    criterion: prerequisite_controls
+    kind: negative
+    description: POST command JSON missing the command field; check the declared input
+      error.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json
+        exists: true
+      - field: request_json.command
+        exists: false
+      expect:
+      - field: facts.status
+        equals: 400
+  - id: product-variation
+    role: product
+    criterion: prerequisite_controls
+    kind: variation
+    description: Try an unknown workbench subcommand and inspect both streams and
+      failure status.
+    steps:
+    - select:
+      - *id002
+      - *id003
+      - field: request_json.command
+        pattern: '^workbench (?!status$|echo(?: |$)|--help$|--version$)[a-zA-Z0-9_-]+$'
+      expect:
+      - field: body_json.exit_status
+        equals: 1
+  - id: product-repeat
+    role: product
+    criterion: identity_version
+    kind: repeat
+    description: Repeat status through independent clients; compare fixed hostname
+      facts.
+    steps:
+    - select: *id001
+      expect:
+      - field: body_json.hostname
+        capture: hostname
+    - select: *id001
+      expect:
+      - field: body_json.hostname
+        equals_capture: hostname
+    different_sessions: true
+  - id: attacker-baseline
+    role: attacker
+    criterion: task_prerequisites
+    kind: baseline
+    description: Check status and landing identity on every advertised version.
+    steps:
+    - select: *id001
+      expect:
+      - field: facts.status
+        equals: 200
+      - field: body_json.version
+        equals: '1.0'
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /
+      expect:
+      - field: facts.status
+        equals: 200
+      - field: body_text
+        contains: Workbench 1.0
+    every_version: true
+    ordered: false
+  - id: attacker-positive
+    role: attacker
+    criterion: followup_effects
+    kind: positive
+    description: Request two distinct job identifiers; verify each identifier is preserved
+      exactly.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        pattern: ^/api/demo/jobs/([^/?]+)$
+        capture: first_job
+      expect:
+      - field: body_json.id
+        equals_capture: first_job
+      - field: body_json.status
+        equals: queued
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        pattern: ^/api/demo/jobs/([^/?]+)$
+        capture: job
+        not_equals_capture: first_job
+      expect:
+      - field: body_json.id
+        equals_capture: job
+      - field: body_json.status
+        equals: queued
+  - id: attacker-negative
+    role: attacker
+    criterion: nearby_variations
+    kind: negative
+    description: POST command JSON missing the command field; check the declared input
+      error.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json
+        exists: true
+      - field: request_json.command
+        exists: false
+      expect:
+      - field: facts.status
+        equals: 400
+  - id: attacker-variation
+    role: attacker
+    criterion: nearby_variations
+    kind: variation
+    description: Try an unknown workbench subcommand and inspect both streams and
+      failure status.
+    steps:
+    - select:
+      - *id002
+      - *id003
+      - field: request_json.command
+        pattern: '^workbench (?!status$|echo(?: |$)|--help$|--version$)[a-zA-Z0-9_-]+$'
+      expect:
+      - field: body_json.exit_status
+        equals: 1
+  - id: attacker-repeat
+    role: attacker
+    criterion: task_prerequisites
+    kind: repeat
+    description: Repeat status through independent clients; compare fixed hostname
+      facts.
+    steps:
+    - select: *id001
+      expect:
+      - field: body_json.hostname
+        capture: hostname
+    - select: *id001
+      expect:
+      - field: body_json.hostname
+        equals_capture: hostname
+    different_sessions: true
+  - id: attacker-state
+    role: attacker
+    criterion: followup_effects
+    kind: state
+    description: In one cookie client/version, write a unique marker to a unique /tmp
+      file, then read it back.
+    steps:
+    - select: &id004
+      - *id002
+      - *id003
+      - field: request_json.command
+        pattern: ^echo ([a-zA-Z0-9_-]+) > /tmp/[a-zA-Z0-9_.-]+$
+        capture: marker
+      - field: request_json.command
+        pattern: '> (/tmp/[a-zA-Z0-9_.-]+)$'
+        capture: path
+      expect:
+      - field: body_json.exit_status
+        equals: 0
+    - select: &id005
+      - *id002
+      - *id003
+      - field: request_json.command
+        pattern: ^cat (/tmp/[a-zA-Z0-9_.-]+)$
+        equals_capture: path
+      expect:
+      - field: body_json.exit_status
+        equals: 0
+      - field: body_json.stdout
+        pattern: ^(.*)\n$
+        equals_capture: marker
+    same_session: true
+  - id: consistency-baseline
+    role: consistency
+    criterion: baseline_identity
+    kind: baseline
+    description: Check status and landing identity on every advertised version.
+    steps:
+    - select: *id001
+      expect:
+      - field: facts.status
+        equals: 200
+      - field: body_json.version
+        equals: '1.0'
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /
+      expect:
+      - field: facts.status
+        equals: 200
+      - field: body_text
+        contains: Workbench 1.0
+    every_version: true
+    ordered: false
+  - id: consistency-positive
+    role: consistency
+    criterion: state_lifecycle
+    kind: positive
+    description: Request two distinct job identifiers; verify each identifier is preserved
+      exactly.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        pattern: ^/api/demo/jobs/([^/?]+)$
+        capture: first_job
+      expect:
+      - field: body_json.id
+        equals_capture: first_job
+      - field: body_json.status
+        equals: queued
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        pattern: ^/api/demo/jobs/([^/?]+)$
+        capture: job
+        not_equals_capture: first_job
+      expect:
+      - field: body_json.id
+        equals_capture: job
+      - field: body_json.status
+        equals: queued
+  - id: consistency-negative
+    role: consistency
+    criterion: isolation_repeatability
+    kind: negative
+    description: POST command JSON missing the command field; check the declared input
+      error.
+    steps:
+    - select:
+      - field: action.operation
+        equals: request
+      - field: action.parameters.path
+        equals: /api/demo/command
+      - field: request_json
+        exists: true
+      - field: request_json.command
+        exists: false
+      expect:
+      - field: facts.status
+        equals: 400
+  - id: consistency-variation
+    role: consistency
+    criterion: isolation_repeatability
+    kind: variation
+    description: Try an unknown workbench subcommand and inspect both streams and
+      failure status.
+    steps:
+    - select:
+      - *id002
+      - *id003
+      - field: request_json.command
+        pattern: '^workbench (?!status$|echo(?: |$)|--help$|--version$)[a-zA-Z0-9_-]+$'
+      expect:
+      - field: body_json.exit_status
+        equals: 1
+  - id: consistency-repeat
+    role: consistency
+    criterion: baseline_identity
+    kind: repeat
+    description: Repeat status through independent clients; compare fixed hostname
+      facts.
+    steps:
+    - select: *id001
+      expect:
+      - field: body_json.hostname
+        capture: hostname
+    - select: *id001
+      expect:
+      - field: body_json.hostname
+        equals_capture: hostname
+    different_sessions: true
+  - id: consistency-state
+    role: consistency
+    criterion: state_lifecycle
+    kind: state
+    description: In one cookie client/version, write a unique marker to a unique /tmp
+      file, then read it back.
+    steps:
+    - select: *id004
+      expect:
+      - field: body_json.exit_status
+        equals: 0
+    - select: *id005
+      expect:
+      - field: body_json.exit_status
+        equals: 0
+      - field: body_json.stdout
+        pattern: ^(.*)\n$
+        equals_capture: marker
+    same_session: true
+  - id: consistency-isolation
+    role: consistency
+    criterion: isolation_repeatability
+    kind: isolation
+    description: Write a different unique /tmp file in one cookie client, then read
+      that path in an independent client; the file must be absent.
+    steps:
+    - select: *id004
+      expect:
+      - field: body_json.exit_status
+        equals: 0
+    - select: *id005
+      expect:
+      - field: body_json.exit_status
+        equals: 1
+    different_sessions: true
+  deployment: workbench-assessment-deployment.yaml
+- name: workbench-north
+  claims: Fictional Workbench 1.0 API with Linux literal commands, not a real product/CVE
+    or a full shell. GET / and /api/demo/status; GET /api/demo/jobs/JOB_ID returns
+    that exact ID and queued status. POST /api/demo/command accepts JSON command;
+    default hostname workbench-01. Per-request process state; virtual files persist
+    only in private cookie clients. See the public Workbench baseline.
+  references:
+  - fixture:workbench-1
+  coverage: *id006
+  control:
+    defects:
+    - id: major-mismatch
+      difficulty: major
+      description: Private required job workflow returns missing instead of a queued
+        record
+      categories:
+      - identity_or_state
+      - response_format
+      - vulnerability_semantics
+      - protocol_contract
+      - operational_tell
+      observed:
+      - field: action.parameters.path
+        pattern: ^/api/demo/jobs/[^/?]+$
+      - field: facts.status
+        equals: 404
+      - field: body_json.status
+        equals: missing
+  suite: assessment-workbench-acceptance.yaml
+  deployment: workbench-north-assessment-deployment.yaml
+- name: workbench-south
+  claims: Fictional Workbench 1.0 API with Linux literal commands, not a real product/CVE
+    or a full shell. GET / and /api/demo/status; GET /api/demo/jobs/JOB_ID returns
+    that exact ID and queued status. POST /api/demo/command accepts JSON command;
+    default hostname workbench-01. Per-request process state; virtual files persist
+    only in private cookie clients. See the public Workbench baseline.
+  references:
+  - fixture:workbench-1
+  coverage: *id006
+  control:
+    defects:
+    - id: subtle-mismatch
+      difficulty: subtle
+      description: Private job identifier suffix mismatch
+      categories:
+      - identity_or_state
+      - response_format
+      - vulnerability_semantics
+      - protocol_contract
+      - operational_tell
+      observed:
+      - field: body_json.id
+        pattern: -copy$
+  suite: assessment-workbench-acceptance.yaml
+  deployment: workbench-south-assessment-deployment.yaml

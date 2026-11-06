@@ -36,12 +36,14 @@ class Expected(Model):
     headers: list[tuple[str, str]] = Field(default_factory=list)
     json_value: object = None
     state: dict[str, str] = Field(default_factory=dict)
+    authenticated: bool | None = None
 
     @model_validator(mode="after")
     def has_assertion(self) -> Expected:
         if not (self.headers or self.state or any(value is not None for value in (
             self.body, self.body_base64, self.contains, self.regex, self.status,
             self.exit_status, self.json_value, self.stderr, self.stderr_base64,
+            self.authenticated,
         ))):
             raise ValueError("Each acceptance step needs at least one assertion")
         return self
@@ -149,6 +151,14 @@ async def evaluate_external(suite_path: Path, protocol: str, version: str,
                         await execute({"operation": "close", "session": session})
                         session = "acceptance-" + uuid.uuid4().hex
                     if protocol == "ssh":
+                        if step.expect.authenticated is not None:
+                            observed = await execute({"operation": "authenticate", "session": None,
+                                "parameters": {"username": case.username, "password": case.password}})
+                            actual = observed.get("facts", {}).get("authenticated")
+                            errors = ([] if actual == step.expect.authenticated else
+                                      [f"authenticated {actual}, expected {step.expect.authenticated}"])
+                            output.append({"interaction_id": observed.get("interaction_id"), "errors": errors})
+                            continue
                         interactive = len(case.steps) > 1
                         action = {"operation": "exec", "session": session if interactive else None,
                                   "parameters": {"command": step.command, "interactive": interactive,
@@ -216,6 +226,19 @@ async def _sequence(runtime: Runtime, listener: Listener, case: Case, version: s
         process = None
         client = None
         for step in case.steps:
+            if listener.protocol == "ssh" and step.expect.authenticated is not None:
+                try:
+                    async with asyncssh.connect("127.0.0.1", port=handle.endpoints[0]["port"],
+                        username=case.username, password=case.password, known_hosts=None,
+                        preferred_auth="password", client_keys=[]):
+                        authenticated = True
+                except asyncssh.PermissionDenied:
+                    authenticated = False
+                errors = ([] if authenticated == step.expect.authenticated else
+                          [f"authenticated {authenticated}, expected {step.expect.authenticated}"])
+                transcript.append({"input": step.model_dump(mode="json", exclude={"expect"}),
+                                   "authenticated": authenticated, "version": "ssh", "errors": errors})
+                continue
             if client is None or step.new_session:
                 if client is not None:
                     await stack.aclose()
@@ -284,14 +307,29 @@ async def _sequence(runtime: Runtime, listener: Listener, case: Case, version: s
 
 
 async def evaluate(reference: str, suite_path: Path, report_dir: Path, *,
-                   config_path: Path | None = None, live_model: bool = False) -> dict:
+                   config_path: Path | None = None, live_model: bool = False,
+                   organization: Path | None = None, instance_id: str | None = None) -> dict:
     suite_raw = read_yaml(suite_path)
     suite = Suite.model_validate(suite_raw)
-    profile = load_profile(reference)
+    profile = load_profile(reference, organization=organization)
+    if instance_id and not config_path:
+        raise ValueError('--instance requires --config')
+    if config_path:
+        from deceive.composition import resolve
+        deployment = load_deployment(config_path)
+        if organization:
+            deployment.organization = organization.resolve()
+        plan = resolve(deployment)
+        matches = [p for members in plan.members.values() for p in members
+                   if (not instance_id or (p.instance_id or p.id) == instance_id) and p.id == profile.id]
+        if len(matches) > 1 or (instance_id and not matches):
+            raise ValueError('Instance selection must identify exactly one matching profile')
+        if matches:
+            profile = matches[0]
     from deceive.composition import _compose
 
     effective = _compose([profile])[0]
-    if effective.fallback == "llm" and not live_model:
+    if (effective.fallback == "llm" or any(c.mode == 'model' for c in effective.contracts)) and not live_model:
         raise ValueError("Generative evaluation requires explicit --live-model and --config")
     if live_model and config_path is None:
         raise ValueError("Live-model evaluation requires --config")
@@ -304,7 +342,7 @@ async def evaluate(reference: str, suite_path: Path, report_dir: Path, *,
         try:
             raw = effective.model_dump(mode="json")
             for key, value in case.overrides.items():
-                if key not in {"identity", "behaviors", "files", "stateful", "fallback"}:
+                if key not in {"identity", "behaviors", "files", "stateful", "fallback", "ssh_auth"}:
                     raise ValueError(f"Unsupported profile override: {key}")
                 raw[key] = value
             candidate = Profile.model_validate(raw)
@@ -312,6 +350,8 @@ async def evaluate(reference: str, suite_path: Path, report_dir: Path, *,
                 raise ValueError("Profile overrides cannot enable live-model evaluation")
             with tempfile.TemporaryDirectory(prefix="deceive-evaluate-") as directory:
                 protocol = "ssh" if candidate.protocol == "ssh" else "http" if suite.http_version == "1.1" else "https"
+                if candidate.requirements and candidate.requirements.protocol == 'https':
+                    protocol = 'https'
                 listener = Listener(name="evaluation", protocol=protocol, profile=reference,
                                     host="127.0.0.1", port=0, quic_port=0,
                                     versions=[suite.http_version], accounts={case.username: case.password})
@@ -351,7 +391,8 @@ async def evaluate(reference: str, suite_path: Path, report_dir: Path, *,
     passed = all(r["passed"] for r in required)
     if suite.held_out_min_pass_rate is not None:
         passed = passed and rate is not None and rate >= suite.held_out_min_pass_rate
-    report = {"schema_version": 1, "profile_id": profile.id, "suite_id": suite.id,
+    report = {"schema_version": 1, "profile_id": profile.id, "instance_id": profile.instance_id or profile.id,
+              "organization_id": profile.organization_id, "suite_id": suite.id,
               "suite_version": suite.version,
               "timestamp": datetime.now(timezone.utc).isoformat(), "passed": passed,
               "profile_fingerprint": fingerprint(profile), "suite_fingerprint": fingerprint(suite_raw),

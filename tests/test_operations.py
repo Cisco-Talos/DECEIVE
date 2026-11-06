@@ -6,6 +6,7 @@ import yaml
 from deceive.catalog import profiles, show
 from deceive.cli import main
 from deceive.config import load_profile
+from deceive.vulnerability_catalog import bundled_vulnerabilities
 
 
 @pytest.mark.parametrize("prefix,suffix", [(["--json"], []), ([], ["--json"])])
@@ -14,7 +15,8 @@ def test_catalog_result_envelope_and_vulnerability_inventory(capsys, prefix, suf
     result = json.loads(capsys.readouterr().out)
     assert result["schema_version"] == 1 and result["operation"] == "profile.list"
     assert result["ok"] and result["exit_code"] == 0 and result["error"] is None
-    assert {row["id"] for row in result["data"]["profiles"]} == {"sudo-2019-14287", "apache-2021-41773"}
+    assert {row["id"] for row in result["data"]["profiles"]} == set(bundled_vulnerabilities())
+    assert {"sudo-2019-14287", "apache-2021-41773", "sshhole-2026-123158"} <= set(bundled_vulnerabilities())
 
 
 def test_catalog_resolves_assets_baselines_and_rejects_conflicting_ids(tmp_path):

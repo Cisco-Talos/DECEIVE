@@ -1,0 +1,122 @@
+schema_version: 1
+profile_id: demo-http
+version: '1'
+subject: Fictional application and bounded platform/protocol plausibility
+kind: fictional
+sources:
+- id: authored-design
+  kind: design
+  title: demo-http
+  url: null
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - Profile-defined identities, application paths and payloads are authored requirements,
+    not external realism evidence.
+  limitations: []
+- id: http-semantics
+  kind: standard
+  title: HTTP Semantics, RFC 9110
+  url: https://www.rfc-editor.org/rfc/rfc9110.html
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - HEAD carries no response content; representation metadata must remain meaningful.
+    Status, method and media type have distinct semantics.
+  limitations: []
+- id: http2
+  kind: standard
+  title: HTTP/2, RFC 9113
+  url: https://www.rfc-editor.org/rfc/rfc9113.html
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - HTTP semantics survive multiplexed streams; stream completion and forbidden connection-specific
+    fields matter.
+  limitations: []
+- id: http3
+  kind: standard
+  title: HTTP/3, RFC 9114
+  url: https://www.rfc-editor.org/rfc/rfc9114.html
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - HTTP semantics run on QUIC streams; response completion and advertised discovery
+    must agree with the endpoint.
+  limitations: []
+- id: cookies
+  kind: standard
+  title: HTTP State Management, RFC 6265
+  url: https://www.rfc-editor.org/rfc/rfc6265.html
+  retrieved: '2026-11-04'
+  revision: null
+  facts:
+  - Separate Set-Cookie fields establish scoped client cookies; user agents maintain
+    their own cookie stores.
+  limitations: []
+criteria:
+- id: http-fidelity
+  roles:
+  - protocol
+  - product
+  - attacker
+  - consistency
+  sources:
+  - http-semantics
+  - http2
+  - http3
+  expectation: Representation bytes, headers, errors and completion remain credible
+    across claimed HTTP versions.
+  comparisons:
+  - Compare GET/HEAD on a representative resource, a negative request, media type
+    and length; substantive workflow on each advertised version.
+  limitations: []
+- id: private-client-state
+  roles:
+  - protocol
+  - product
+  - attacker
+  - consistency
+  sources:
+  - cookies
+  expectation: Independent clients have separate cookie stores and claimed private
+    application state.
+  comparisons:
+  - Create a unique marker in one cookie client and read it; use an untouched independent
+    recipient; repeat after reconnect.
+  limitations:
+  - Application lifetime is an authored design choice; cookie standards do not require
+    private files.
+- id: scope-coherence
+  roles:
+  - protocol
+  - product
+  - attacker
+  - consistency
+  sources:
+  - authored-design
+  - http-semantics
+  - http2
+  - http3
+  - cookies
+  expectation: Representative supported and nearby challenge interactions maintain
+    the researched platform/protocol conventions and consistent authored identity.
+  comparisons:
+  - Choose variations beyond the supplied examples; distinguish an impossible in-scope
+    result from a documented exclusion; identify material unknowns instead of awarding
+    maximum by default.
+  limitations:
+  - Authored application status and custom workbench command output establish functional
+    conformance only.
+unknowns:
+- No complete real-system equivalence claim. Material unsampled facets must remain
+  unassessed.
+- Research does not independently verify every distribution patch/build identity or
+  every configuration.
+search_notes:
+- Primary protocol/platform sources read as documentation; no live vulnerable reference
+  software, downloaded PoCs or scanners executed.
+- No genuine counterpart packet/session captures collected; documented behavior and
+  bounded plausibility are the available comparison basis.
+- No CVE/affected-product exploit claim for this profile; CVE-specific PoCs/detectors
+  are not applicable.

@@ -1,9 +1,18 @@
 import asyncio
 from base64 import b64decode
 import json
+import os
+import pty
+import select
+import shutil
+import subprocess
+import time
 
 import asyncssh
 import pytest
+
+from deceive.config import load_profile
+from deceive.clients import ShellClient
 
 
 async def connect(runtime, username="guest", password=None):
@@ -59,7 +68,7 @@ async def test_interactive_state_is_private_and_identity_consistent(runtime_fact
         b = await second.create_process(term_type="xterm")
         for process in (a, b):
             banner = await asyncio.wait_for(process.stdout.readuntil("$ "), 2)
-            assert "Welcome" in banner and "build-node-03" in banner
+            assert "Ubuntu 22.04.5 LTS" in banner and "build-node-03" in banner
             process.stdin.write("hostname\n")
             output = await asyncio.wait_for(process.stdout.readuntil("$ "), 2)
             assert output.startswith("build-node-03\n")
@@ -70,6 +79,72 @@ async def test_interactive_state_is_private_and_identity_consistent(runtime_fact
         for process in (a, b):
             process.stdin.write("exit\n")
             await asyncio.wait_for(process.wait_closed(), 2)
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(shutil.which("ssh") is None, reason="OpenSSH client is unavailable")
+async def test_openssh_terminal_accepts_enter_and_echoes_input(runtime_factory):
+    runtime = await runtime_factory("ssh", profile=load_profile("sudo-2019-14287"))
+    port = next(iter(runtime.servers.values())).endpoints[0]["port"]
+
+    def interact() -> tuple[bytes, bytes, bytes, bytes, bytes]:
+        master, slave = pty.openpty()
+        process = subprocess.Popen([
+            "ssh", "-F", "/dev/null", "-tt", "-p", str(port),
+            "-o", "BatchMode=yes", "-o", "PreferredAuthentications=none",
+            "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
+            "-o", "LogLevel=ERROR", "guest@127.0.0.1",
+        ], stdin=slave, stdout=slave, stderr=slave, start_new_session=True)
+        os.close(slave)
+
+        def read_prompt(timeout: float) -> bytes:
+            output = bytearray()
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                if select.select([master], [], [], 0.1)[0]:
+                    try:
+                        output.extend(os.read(master, 4096))
+                    except OSError:
+                        break
+                    if b"guest@build-node-03:~$ " in output:
+                        break
+            return bytes(output)
+
+        try:
+            banner = read_prompt(3)
+            assert b"guest@build-node-03:~$ " in banner
+            os.write(master, b"whoami\r")
+            first = read_prompt(3)
+            os.write(master, b"whoamx\x7fi\r")
+            edited = read_prompt(3)
+            os.write(master, b"sudo -u#-1 id\r")
+            bypass = read_prompt(3)
+            os.write(master, b"ls -la\r")
+            listing = read_prompt(3)
+            return banner, first, edited, bypass, listing
+        finally:
+            process.terminate()
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=2)
+            os.close(master)
+
+    banner, first, edited, bypass, listing = await asyncio.to_thread(interact)
+    assert b"Debian GNU/Linux 10 (buster)\r\n" in banner
+    assert banner.endswith(b"\r\nguest@build-node-03:~$ ")
+    for output in (first, edited):
+        assert b"whoami" in output or b"whoamx\x08 \x08i" in output
+        assert b"guest\r\nguest@build-node-03:~$ " in output
+        assert output.endswith(b"guest@build-node-03:~$ ")
+    assert b"sudo -u#-1 id" in bypass
+    assert b"uid=0(root)" in bypass
+    assert bypass.endswith(b"guest@build-node-03:~$ ")
+    assert b"ls -la\r\n" in listing
+    assert b".bashrc" in listing and b"README.txt" in listing
+    assert b"sh: command not found" not in listing
+    assert listing.endswith(b"guest@build-node-03:~$ ")
 
 
 @pytest.mark.asyncio
@@ -90,6 +165,30 @@ async def test_source_ports_keys_and_virtual_files(runtime_factory, tmp_path):
     assert key_path.read_bytes() == key
     async with await connect(restarted) as connection:
         assert (await connection.run("hostname")).stdout == "build-node-03\n"
+
+
+@pytest.mark.asyncio
+async def test_sudo_keeps_deterministic_baseline_and_uses_optional_model_for_unfamiliar_commands(runtime_factory):
+    profile = load_profile("sudo-2019-14287")
+    assert profile.fallback == "llm_if_available"
+    local = await runtime_factory("ssh", profile=profile)
+    async with await connect(local) as connection:
+        listing = await connection.run("ls -la")
+        assert ".bashrc" in listing.stdout and "README.txt" in listing.stdout
+        assert listing.exit_status == 0
+
+    modeled = await runtime_factory("ssh", profile=profile, model=True)
+    port = next(iter(modeled.servers.values())).endpoints[0]["port"]
+    async with await asyncssh.connect("127.0.0.1", port=port, username="guest",
+                                     known_hosts=None, encoding=None) as connection:
+        shell = await ShellClient.open(connection, 2)
+        known = await shell.run("sudo -u#-1 id", 2)
+        assert b"uid=0(root)" in known.body
+        assert not modeled.test_provider.calls
+        unknown = await shell.run("unfamiliar-command", 2)
+        assert unknown.body == b"simulated output\n"
+        assert len(modeled.test_provider.calls) == 1
+        await shell.run("exit", 2)
 
 
 @pytest.mark.asyncio

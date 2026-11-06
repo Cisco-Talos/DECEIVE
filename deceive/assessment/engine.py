@@ -20,7 +20,7 @@ from deceive.assessment.docker import Docker, deploy
 from deceive.assessment.models import CandidateManifest, Decisions, LoopResult, ProbeAction, Review, Spec
 from deceive.assessment.scoring import exit_reason, quality_confirmed, target_score
 from deceive.assessment.telemetry import audit, parse_logs
-from deceive.assessment.workspace import checkpoint, git, load_json, locked, now, source_files, target_deployment, write_json
+from deceive.assessment.workspace import checkpoint, git, load_json, locked, now, source_files, spec_identity, target_deployment, write_json
 from deceive.composition import resolve
 from deceive.config import fingerprint, read_yaml
 from deceive.evaluate import evaluate_external
@@ -34,6 +34,7 @@ def source_identity(root: Path) -> str:
 
 
 def check_fresh(state: dict) -> None:
+    check_spec(state)
     root = Path(state["root"])
     if git(root, "branch", "--show-current").strip() != state["baseline"]["branch"]:
         raise ValueError("Assessment branch changed; preserve edits and resume on the recorded branch")
@@ -41,6 +42,11 @@ def check_fresh(state: dict) -> None:
         raise ValueError("Candidate changed during assessment; begin-loop --retry to reassess the new revision")
     if state.get("current") and definitions_identity(Spec.model_validate(state["spec"])) != state["current"].get("definitions_id"):
         raise ValueError("Profile/config/assets changed during assessment; begin-loop --retry")
+
+
+def check_spec(state: dict) -> None:
+    if state.get('assessment_definition_id') and spec_identity(state['spec']) != state['assessment_definition_id']:
+        raise ValueError('Frozen assessment specification changed; preserve this run and prepare a new one')
 
 
 def definitions_identity(spec: Spec) -> str:
@@ -54,7 +60,8 @@ def definitions_identity(spec: Spec) -> str:
             "suite": fingerprint(read_yaml(Path(target.suite))) if target.suite else None}
         for members in plan.members.values():
             for profile in members:
-                identity = fingerprint(profile)
+                from deceive.composition import content_fingerprint
+                identity = profile.definition_fingerprint or content_fingerprint(profile)
                 if profile.id in known and known[profile.id] != identity:
                     raise ValueError(f"Conflicting catalog definitions for {profile.id}")
                 known[profile.id] = identity
@@ -114,20 +121,40 @@ def public_state(state: dict) -> dict:
     if current:
         for handle, entry in current["targets"].items():
             targets[handle] = {"available": not bool(entry.get("error")),
+                'instances': [{'profile_id': p['id'], 'instance_id': p.get('instance_id', p['id'])}
+                              for p in entry.get('profiles', [])],
                 "claims": entry.get("claims", ""), "references": entry.get("references", []),
-                "limitations": entry.get("limitations", []), "services": [
+                "research": next((t.get('research') for t in state['spec']['targets']
+                                  if t['name'] == entry['target_name']), None),
+                "limitations": entry.get("limitations", []),
+                "coverage_goals": [{k: g[k] for k in ('id', 'role', 'criterion', 'kind', 'description')}
+                    | {k: g.get(k, default) for k, default in {
+                        'every_service': True, 'every_version': False, 'same_session': False,
+                        'different_sessions': False, 'ordered': True}.items()}
+                    | {'required_methods': sorted({rule['equals'] for step in g.get('steps', [])
+                        for rule in step.get('select', [])
+                        if rule['field'] == 'action.parameters.method' and
+                        isinstance(rule.get('equals'), str)})}
+                    for t in state['spec']['targets'] if t['name'] == entry['target_name']
+                    for g in t.get('coverage', [])], "services": [
                     {k: e[k] for k in ("id", "protocol", "versions")}
                     for e in entry.get("endpoints", [])]}
     return {"run_id": state["run_id"], "phase": state["phase"],
+            'workflow': {'schema_version':state['spec'].get('schema_version', 1),
+                         'plan_required':state['spec'].get('schema_version', 1) == 2,
+                         'audit_required':state['spec'].get('schema_version', 1) == 2},
             "candidate_id": current["candidate_id"] if current else None,
             "loop": current["number"] if current else len(state["loops"]),
             "targets": targets, "limits": state["spec"]["limits"],
             "stop_reason": state.get("stop_reason"),
-            "review_rubric": briefing() if state["spec"].get("review_rubric") == "evidence-v2" else {"id": "legacy-v1"},
+            "review_rubric": briefing(state['spec']['review_rubric'])
+                if state['spec'].get('review_rubric') in {'evidence-v2', 'evidence-v3', 'research-v4'} else {"id": "legacy-v1"},
             "session_reset_on_resume": bool(current and current.get("session_reset_on_resume")),
             "action_examples": {
                 "ssh": {"operation": "exec", "endpoint": "service-1", "session": "visit",
                         "parameters": {"command": "hostname"}},
+                "ssh_auth": {"operation": "authenticate", "endpoint": "service-1",
+                             "parameters": {"username": "user", "password": "password"}},
                 "http": {"operation": "request", "endpoint": "service-1", "session": "visit",
                          "parameters": {"version": "1.1", "method": "GET", "path": "/"}},
                 "close": {"operation": "close", "endpoint": "service-1", "session": "visit"}}}
@@ -138,6 +165,7 @@ async def begin_loop(run: Path, *, retry: bool = False, docker: Docker | None = 
     with locked(run):
         state = load_json(run / "state.json")
         spec = Spec.model_validate(state["spec"])
+        check_spec(state)
         state["spec"] = spec.model_dump(mode="json")
         claim_repository(run, state)
         if state["phase"] == "finished" or (state.get("stop_reason") and not retry):
@@ -191,7 +219,7 @@ async def begin_loop(run: Path, *, retry: bool = False, docker: Docker | None = 
                                 state["containers"].pop(handle)
                                 write_json(run / "state.json", state)
                     entry["claims"] = target.claims or " ".join(p["description"] for p in entry["profiles"])
-                    entry["references"] = sorted({r for p in entry["profiles"] for r in p["references"]})
+                    entry["references"] = sorted({r for p in entry["profiles"] for r in p["references"]} | set(target.references))
                     entry["limitations"] = sorted({r for p in entry["profiles"] for r in p["limitations"]})
                     current["targets"][handle] = entry
                     stage = Path(entry["stage"])
@@ -210,7 +238,7 @@ async def begin_loop(run: Path, *, retry: bool = False, docker: Docker | None = 
                     definitions[handle] = normalized
                 except (OSError, ValueError, RuntimeError) as exc:
                     current["targets"][handle] = {"error": str(exc), "target_name": target.name,
-                                                  "calibration": bool(target.calibration)}
+                                                  "calibration": bool(target.calibration or target.control)}
                     current["correctness"][handle] = {"status": "failed", "error": str(exc)}
             assessment_context = {k: v for k, v in state["spec"].items()
                                   if k not in {"policy", "limits", "docker"}}
@@ -261,7 +289,7 @@ async def acceptance(run: Path, state: dict, spec: Spec, handle: str, docker: Do
             continue
         raw = read_yaml(suite)
         try:
-            criteria_key = entry["target_name"] + "/" + profile["id"]
+            criteria_key = entry["target_name"] + "/" + profile.get('instance_id', profile['id'])
             accepted = state.setdefault("criteria", {}).setdefault(criteria_key, fingerprint(raw))
             if accepted != fingerprint(raw):
                 raise ValueError("Frozen run acceptance criteria changed; prepare a separately agreed run")
@@ -277,7 +305,7 @@ async def acceptance(run: Path, state: dict, spec: Spec, handle: str, docker: Do
             # Protected variants run in fresh loopback listeners inside the same
             # candidate image using the staged profile, not the bundled old copy.
             stage = Path(entry["stage"])
-            name = "suite-" + profile["id"] + ".json"
+            name = "suite-" + profile.get('instance_id', profile['id']) + ".json"
             (stage / name).write_text(json.dumps(raw))
             (stage / name).chmod(0o644)
             config = json.loads((stage / "deployment.yaml").read_text())
@@ -298,10 +326,10 @@ with tempfile.TemporaryDirectory() as directory:
                 "python", "-c", program, reference, "/stage/" + name,
                 "1" if listener.get("provider") else "0", timeout=300))
             passed = full["passed"] and all(v["external_passed"] for v in variants)
-            report = {"profile_id": profile["id"], "passed": passed,
+            report = {"profile_id": profile["id"], 'instance_id': profile.get('instance_id', profile['id']), "passed": passed,
                       "external": variants, "docker_loopback_with_variants": full}
-            write_json(directory / (profile["id"] + "-acceptance.json"), report)
-            reports.append({"profile_id": profile["id"], "passed": bool(passed)})
+            write_json(directory / (profile.get('instance_id', profile['id']) + "-acceptance.json"), report)
+            reports.append({"profile_id": profile["id"], 'instance_id': profile.get('instance_id', profile['id']), "passed": bool(passed)})
         except (OSError, ValueError, RuntimeError) as exc:
             reports.append({"profile_id": profile["id"], "passed": False, "error": str(exc)[:500]})
     return {"status": "passed" if reports and all(r["passed"] for r in reports) else "failed",
@@ -320,14 +348,43 @@ def record_review(run: Path, report: Review) -> dict:
         directory = run / current["directory"]
         observations = read_observations(directory)
         evidence = {o["interaction_id"] for o in observations if o["role"] == report.role
-                    and o["target"] == report.target and o["action"]["operation"] != "close"}
+                    and o["target"] == report.target and o.get('candidate_id') == report.candidate_id
+                    and o["action"]["operation"] != "close"}
         if not evidence:
             raise ValueError("A review needs active interaction evidence for this role/target")
         if state["spec"].get("review_rubric") == "evidence-v2" and report.score_basis is None:
             raise ValueError("The evidence-v2 rubric requires a score_basis with captured evidence")
+        expected_schema = {'research-v4': 3, 'evidence-v3': 2}.get(state['spec'].get('review_rubric'), 1)
+        if report.schema_version != expected_schema:
+            raise ValueError('Review schema does not match the frozen assessment rubric')
+        entry = current['targets'][report.target]
+        target = next(t for t in state['spec']['targets'] if t['name'] == entry['target_name'])
+        if expected_schema == 3:
+            from deceive.assessment.research import Dossier, comparison_errors
+            errors = comparison_errors(Dossier.model_validate(target['research'])
+                                       if target.get('research') else None,
+                                       report.model_dump(mode='json'))
+            if errors:
+                raise ValueError('; '.join(errors))
+        owned_goals = {g['id']: g for g in target.get('coverage', []) if g['role'] == report.role}
+        for name, criterion in report.ratings.items():
+            if not set(criterion.evidence).issubset(evidence):
+                raise ValueError("Criterion references unknown or another reviewer's evidence")
+            if not set(criterion.coverage).issubset(owned_goals):
+                raise ValueError(f'{name}: cite only public goal IDs assigned to your role; '
+                                 'put extra experiments in narrative/evidence')
+            assigned = {gid for gid, goal in owned_goals.items() if goal['criterion'] == name}
+            if criterion.rating is not None and not assigned.issubset(criterion.coverage):
+                raise ValueError(f'{name}: Missing assigned goals: ' + ', '.join(sorted(
+                    assigned - set(criterion.coverage))) + '; use null if unassessed')
+            if criterion.rating is not None and criterion.reference not in entry.get('references', []):
+                raise ValueError(f'{name}: reference must be in the frozen public baseline')
         if report.score_basis and not set(report.score_basis.evidence).issubset(evidence):
             raise ValueError("Score basis references unknown or another reviewer's evidence")
         for finding in report.findings:
+            allowed_instances = {p.get('instance_id', p['id']) for p in current['targets'][report.target].get('profiles', [])}
+            if not set(finding.instance_ids).issubset(allowed_instances):
+                raise ValueError('Finding references an instance outside its target')
             if not set(finding.evidence).issubset(evidence):
                 raise ValueError("Finding references unknown or another reviewer's evidence")
         key = report.role + "/" + report.target
@@ -347,7 +404,8 @@ def read_observations(directory: Path) -> list[dict]:
 
 
 async def end_loop(run: Path, decisions: Decisions | None = None, *, plateau_confirmed: bool = False,
-                   docker: Docker | None = None) -> dict:
+                   docker: Docker | None = None, incomplete_reason: str | None = None,
+                   incomplete_kind: str = 'incomplete_review') -> dict:
     docker = docker or Docker()
     decisions = decisions or Decisions()
     with locked(run):
@@ -357,15 +415,42 @@ async def end_loop(run: Path, decisions: Decisions | None = None, *, plateau_con
         check_fresh(state)
         current = state["current"]
         directory = run / current["directory"]
+        closure_audit = None
+        if state['spec']['schema_version'] == 2:
+            from deceive.assessment.workflow import audit_state
+            closure_audit = audit_state(run, state)
+            if not closure_audit['ready'] and not incomplete_reason:
+                raise ValueError('Review audit is incomplete; run assess audit and repair the evidence '
+                                 'while the loop remains active. A diagnosed partial close requires '
+                                 '--incomplete-reason and --incomplete-kind.')
+            if incomplete_reason and len(incomplete_reason.strip()) < 20:
+                raise ValueError('Incomplete closure needs an actionable diagnosis of at least 20 characters')
+            if incomplete_kind not in {'incomplete_review', 'harness_error', 'infrastructure_interruption'}:
+                raise ValueError('Unknown incomplete assessment category')
+            if current.get('broker') and not incomplete_reason:
+                try:
+                    broker = await rpc(run, {'operation':'ping'})
+                except (OSError, ValueError, TimeoutError) as exc:
+                    raise ValueError('Broker unavailable during closure audit; diagnose/resume or '
+                                     'record an explicit incomplete closure') from exc
+                if broker.get('active'):
+                    raise ValueError('Closure audit requires reviewers to finish active probes first')
         await stop_broker(run)
         observations = read_observations(directory)
         roles = state["spec"]["roles"]
         spec = Spec.model_validate(state["spec"])
         targets, findings = {}, []
+        v3 = spec.review_rubric in {'evidence-v3', 'research-v4'}
+        research = spec.review_rubric == 'research-v4'
+        from deceive.assessment.quality import calibration, score_target
+        all_reviews = {handle: [load_json(run / path) for key, path in current['reviews'].items()
+                               if key.split('/')[1] == handle] for handle in current['targets']}
+        sensitivity = calibration(spec, current['targets'], all_reviews, observations) if v3 else {
+            'passed': False, 'missing': [], 'detections': [], 'reason': 'Legacy rubric cannot qualify realism'}
         previous = {f["key"]: f | {"candidate_id": f.get("candidate_id", loop["candidate_id"])}
                     for loop in state["loops"] for f in loop["findings"]
                     if not loop["targets"][f["target"]].get("calibration")}
-        calibration_passed = True
+        calibration_passed = sensitivity['passed'] if v3 else True
         for handle, entry in current["targets"].items():
             records = []
             telemetry = {"status": "unassessed", "errors": ["Target unavailable"]}
@@ -379,9 +464,11 @@ async def end_loop(run: Path, decisions: Decisions | None = None, *, plateau_con
                     telemetry = audit(records, [o for o in observations if o["target"] == handle], allowed)
                 except (OSError, RuntimeError, ValueError) as exc:
                     telemetry = {"status": "failed", "errors": [str(exc)]}
-            reviews = [load_json(run / path) for key, path in current["reviews"].items()
-                       if key.split("/")[1] == handle]
-            score = target_score(reviews, roles)
+            reviews = all_reviews[handle]
+            target = next(t for t in spec.targets if t.name == entry['target_name'])
+            own_observations = [o for o in observations if o['target'] == handle
+                                and o.get('candidate_id') == current['candidate_id']]
+            score = score_target(target, entry, reviews, roles, own_observations, spec) if v3 else target_score(reviews, roles)
             services = [e["id"] for e in entry.get("endpoints", [])]
             coverage = {role: {service: any(o["role"] == role and o["target"] == handle
                 and not o.get("error") and o["action"]["operation"] != "close"
@@ -419,6 +506,7 @@ async def end_loop(run: Path, decisions: Decisions | None = None, *, plateau_con
                     findings.append(finding | {"key": key, "candidate_id": current["candidate_id"],
                         "reviewer": review["role"], "target": handle,
                         "profile_ids": [p["id"] for p in entry.get("profiles", [])],
+                        "instance_ids": finding.get('instance_ids') or [p.get('instance_id', p['id']) for p in entry.get('profiles', [])],
                         "verification": verification})
             current_keys = {f["key"] for f in findings}
             for key, prior in previous.items():
@@ -432,14 +520,26 @@ async def end_loop(run: Path, decisions: Decisions | None = None, *, plateau_con
                     critical = True
             correctness = current["correctness"].get(handle, {"status": "unassessed"})
             disagreement = score["spread"] is not None and score["spread"] > spec.policy.disagreement
-            qualified = (score["complete"] and score["median"] >= spec.policy.minimum_realism
+            qualified = (research and score["complete"] and score.get('dimension_floor_passed', False)
+                and score["median"] >= spec.policy.minimum_realism
                 and correctness["status"] == telemetry["status"] == "passed" and not critical
                 and (not disagreement or bool(decisions.reconciliations.get(handle))))
             target_result = score | {"qualified": bool(qualified), "correctness": correctness,
                 "telemetry": telemetry, "profiles": entry.get("profiles", []),
                 "calibration": entry.get("calibration", False), "disagreement": disagreement,
                 "coverage": coverage, "protocol_coverage": protocol_coverage}
-            if entry.get("calibration"):
+            issues = list((closure_audit or {}).get('targets', {}).get(handle, {}).get('issues', []))
+            if incomplete_reason and not score['complete']:
+                issues.append({'category':incomplete_kind, 'message':incomplete_reason})
+            issues.extend({'category':'deception_defect', 'message':f['description'],
+                           'finding':f['key']} for f in findings if f['target'] == handle and
+                          f['verification']['status'] == 'verified')
+            if correctness['status'] != 'passed' and not entry.get('calibration'):
+                issues.append({'category':'technical_failure', 'message':'Required acceptance did not pass'})
+            if telemetry['status'] != 'passed':
+                issues.append({'category':'technical_failure', 'message':'Telemetry audit did not pass'})
+            target_result['assessment_issues'] = issues
+            if entry.get("calibration") and not v3:
                 # Calibration must be observed, not counted as a failed production deception.
                 detected = any(f["target"] == handle and f["verification"]["status"] == "verified"
                                and f["category"] in {"response_format", "vulnerability_semantics",
@@ -448,15 +548,24 @@ async def end_loop(run: Path, decisions: Decisions | None = None, *, plateau_con
                 target_result["calibration_detected"] = detected
                 calibration_passed &= detected and score["complete"]
             targets[handle] = target_result
+        if v3 and not sensitivity['passed']:
+            for value in targets.values():
+                value['provisional_scores'] = value.get('provisional_scores', value['scores'])
+                value.update(complete=False, qualified=False, scores={}, median=None, spread=None)
+                value.setdefault('assessment_errors', []).append('Reviewer calibration is incomplete or failed')
+        for value in targets.values():
+            value['assessment_status'] = ('assessed' if value['complete'] else 'insufficiently_assessed') if research else 'legacy_unvalidated'
         actual = {k: v for k, v in targets.items() if not v["calibration"]}
-        complete = bool(actual) and all(v["complete"] for v in targets.values())
+        complete = bool(actual) and not incomplete_reason and all(v["complete"] for v in targets.values())
         result = {"schema_version": 1, "loop": current["number"], "attempt": current["attempt"],
             "candidate_id": current["candidate_id"], "comparison_id": current["comparison_id"],
             "source": current["source"], "image": current.get("image"), "client_id": current["source"]["client_id"],
-            "complete": complete, "qualified": bool(actual) and calibration_passed
+            "complete": complete, "qualified": bool(actual) and not incomplete_reason and calibration_passed
                 and all(v["qualified"] for v in actual.values()),
             "targets": targets, "findings": findings, "progress": decisions.progress,
             "plateau_confirmed": plateau_confirmed, "calibration_passed": calibration_passed,
+            'review_rubric': spec.review_rubric, 'calibration_results': sensitivity,
+            'assessment_status': ('assessed' if complete else 'insufficiently_assessed') if research else 'legacy_unvalidated',
             "started": current["started"], "finished": now(), "native_agent_usage": None,
             "directory": current["directory"]}
         state["loops"].append(result)
@@ -465,11 +574,16 @@ async def end_loop(run: Path, decisions: Decisions | None = None, *, plateau_con
         state["stop_reason"] = exit_reason(state["loops"], spec.policy)
         write_json(directory / "scores.json", result)
         write_json(directory / "decisions.json", decisions.model_dump(mode="json"))
+        if incomplete_reason:
+            write_json(directory / 'incomplete-closure.json', {
+                'category':incomplete_kind, 'reason':incomplete_reason, 'quality_waiver':False})
         write_json(run / "state.json", state)
         from deceive.assessment.dashboard import render
         render(run)
         return {"loop": result["loop"], "complete": complete, "qualified": result["qualified"],
+                'assessment_status': result['assessment_status'], 'calibration_results': sensitivity,
                 "stop_reason": state["stop_reason"], "targets": {k: {"median": v["median"],
+                    'assessment_status': v['assessment_status'], 'assessment_errors': v.get('assessment_errors', []),
                     "qualified": v["qualified"], "correctness": v["correctness"]["status"],
                     "telemetry": v["telemetry"]["status"]} for k, v in targets.items()}}
 

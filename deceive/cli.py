@@ -26,6 +26,7 @@ from deceive.operations import OperationResult, output_argument
 def selection_arguments(command: argparse.ArgumentParser) -> None:
     output_argument(command)
     command.add_argument("--config", "-c", type=Path)
+    command.add_argument("--organization", type=Path, help="Default organization values for selected instances")
     command.add_argument("--profile", "--deception", dest="profile", action="append",
                          help="Add a built-in name or profile YAML (repeatable; additive with --config)")
     command.add_argument("--data-dir", type=Path)
@@ -69,10 +70,12 @@ def parser() -> argparse.ArgumentParser:
     show = actions.add_parser("show", help="Inspect a profile and its resolved baseline")
     output_argument(show)
     show.add_argument("profile")
+    show.add_argument("--organization", type=Path)
     show.add_argument("--directory", type=Path, action="append", default=[])
     validate = actions.add_parser("validate")
     output_argument(validate)
     validate.add_argument("profile")
+    validate.add_argument("--organization", type=Path)
     evaluate = actions.add_parser("evaluate")
     output_argument(evaluate)
     evaluate.add_argument("profile")
@@ -80,6 +83,8 @@ def parser() -> argparse.ArgumentParser:
     evaluate.add_argument("--report-dir", required=True, type=Path)
     evaluate.add_argument("--config", type=Path, help="Provider configuration for explicit live-model runs")
     evaluate.add_argument("--live-model", action="store_true")
+    evaluate.add_argument("--organization", type=Path)
+    evaluate.add_argument("--instance", help="Select a bound instance from --config")
     configs = commands.add_parser("config")
     output_argument(configs)
     config_actions = configs.add_subparsers(dest="action", required=True)
@@ -124,6 +129,8 @@ def deployment_from_args(args: argparse.Namespace) -> Deployment:
                 args.https, args.http_versions, args.quic_port is not None, args.advertised_port, args.analyze)):
             raise ValueError("Use deployment YAML for listener settings when --config is supplied")
         deployment = load_deployment(args.config, additional_profiles=args.profile)
+        if args.organization:
+            deployment.organization = args.organization.resolve()
         if args.data_dir:
             deployment.data_dir = args.data_dir.resolve()
         return deployment
@@ -135,6 +142,8 @@ def deployment_from_args(args: argparse.Namespace) -> Deployment:
     elif args.model:
         raise ValueError("--model requires --provider")
     deployment = Deployment(
+        schema_version=2 if args.organization else 1,
+        organization=args.organization.resolve() if args.organization else None,
         data_dir=(args.data_dir or Path(os.environ.get("DECEIVE_DATA_DIR", ".deceive"))).resolve(),
         providers=providers, deceptions=[Deception(profile=ref) for ref in args.profile or ["demo-http"]],
         deception_defaults={"host": args.host or "0.0.0.0",
@@ -183,7 +192,9 @@ async def validated_plan(deployment: Deployment) -> dict:
             "name": listener.name, "protocol": listener.protocol, "host": listener.host,
             "port": listener.port, "quic_port": listener.quic_port,
             "versions": listener.versions if listener.protocol in {"http", "https"} else [],
-            "profiles": [{"id": p.id, "version": p.version, "fingerprint": fingerprint(p)}
+            "profiles": [{"id": p.id, "version": p.version, "fingerprint": fingerprint(p),
+                          'instance_id': p.instance_id or p.id, 'organization_id': p.organization_id,
+                          'parameters': p.resolved_parameters, 'origins': p.parameter_origins}
                          for p in runtime.plan.members[listener.name]],
         } for listener in runtime.plan.listeners]}
     finally:
@@ -268,7 +279,7 @@ def main(argv: list[str] | None = None) -> int:
                     raise ValueError("Managed deployments use a persistent Docker volume; --state-dir selects manager metadata, while serve supports --data-dir")
                 if args.host and args.publish_host != "127.0.0.1" and args.host != args.publish_host:
                     raise ValueError("--host and --publish-host must agree")
-                settings = any((args.config, args.profile, args.provider, args.model, args.host,
+                settings = any((args.config, args.profile, args.organization, args.provider, args.model, args.host,
                     args.port is not None, args.https, args.http_versions, args.quic_port is not None,
                     args.advertised_port, args.analyze, args.data_dir))
                 retained = (manager.directory(args.name) / "record.json").exists()
@@ -315,27 +326,33 @@ def main(argv: list[str] | None = None) -> int:
                      for row in rows] or ["No matching profiles"]
         elif args.action == "show":
             from deceive.catalog import show
-            outcome.data = show(args.profile, args.directory)
+            outcome.data = show(args.profile, args.directory, organization=args.organization)
             lines = [f'{outcome.data["id"]}@{outcome.data["version"]}: {outcome.data["description"]}',
                      f'Protocol: {outcome.data["protocol"]}; fallback: {outcome.data["fallback"]}',
                      "Identity: " + json.dumps(outcome.data["effective_identity"]),
                      "Requirements: " + json.dumps(outcome.data["definition"].get("requirements", {}))]
             lines.extend("Limitation: " + value for value in outcome.data["limitations"])
+            lines.append('Parameters: ' + json.dumps(outcome.data['parameters']))
+            lines.append('Contracts: ' + json.dumps(outcome.data['contracts']))
         elif args.action == "validate":
-            profile = load_profile(args.profile)
+            profile = load_profile(args.profile, organization=args.organization)
             from deceive.composition import _compose
             effective, _ = _compose([profile])
             for behavior in effective.behaviors:
                 if behavior.kind not in BUILTIN_BEHAVIORS:
                     raise ValueError(f"Unsupported behavior capability: {behavior.kind}")
                 validate_behavior(behavior, effective)
-            outcome.data = {"id": profile.id, "version": profile.version, "fingerprint": fingerprint(profile)}
+            from deceive.contracts import validate_profile
+            validate_profile(effective)
+            outcome.data = {"id": profile.id, "version": profile.version, "fingerprint": fingerprint(profile),
+                            'parameters': profile.resolved_parameters, 'origins': profile.parameter_origins}
             lines = [f"Valid: {profile.id} version {profile.version}"]
         else:
             from deceive.evaluate import evaluate
 
             report = asyncio.run(evaluate(args.profile, args.suite, args.report_dir,
-                                         config_path=args.config, live_model=args.live_model))
+                                         config_path=args.config, live_model=args.live_model,
+                                         organization=args.organization, instance_id=args.instance))
             outcome.data = {key: value for key, value in report.items() if key != "cases"}
             outcome.exit_code = 0 if report["passed"] else 1
             outcome.artifacts = [str(path.resolve()) for path in sorted(args.report_dir.iterdir()) if path.is_file()]

@@ -6,7 +6,8 @@ import json
 
 def ssh_output_matches(record: dict, output: dict, interactive: bool) -> bool:
     try:
-        if bool(record.get("interactive")) != interactive or record.get("ssh_response_error"):
+        if (record.get('response_stage', 'final') != 'final' or
+            bool(record.get("interactive")) != interactive or record.get("ssh_response_error")):
             return False
         body = base64.b64decode(record.get("ssh_stdout", record.get("details", "")), validate=True)
         stderr = base64.b64decode(record.get("ssh_stderr", ""), validate=True)
@@ -45,7 +46,7 @@ def audit(records: list[dict], observations: list[dict], allowed_profiles: set[s
             if "ssh_stdout" in record and ("ssh_stderr" not in record or
                 type(record.get("ssh_exit_status")) is not int or not 0 <= record["ssh_exit_status"] <= 255):
                 errors.append("Invalid SSH output metadata")
-            if record.get("ssh_response_error"):
+            if record.get("ssh_response_error") and record.get("response_stage", "final") != "attempt":
                 errors.append("Rejected SSH model reply lacks a captured wire response")
             request = record.get("request_id")
             if not request:
@@ -55,7 +56,10 @@ def audit(records: list[dict], observations: list[dict], allowed_profiles: set[s
                     errors.append("Duplicate input correlation")
                 inputs[request] = record
             else:
-                responses.setdefault(request, []).append(record)
+                if record.get('response_stage', 'final') == 'final':
+                    responses.setdefault(request, []).append(record)
+                elif record.get('response_stage') != 'attempt' or record.get('attempt') not in (1, 2):
+                    errors.append('Invalid model attempt metadata')
                 expected_origin = "llm" if message == "LLM response" else "deterministic"
                 if record.get("response_origin") != expected_origin:
                     errors.append("Response origin does not match message type")
@@ -122,7 +126,7 @@ def audit(records: list[dict], observations: list[dict], allowed_profiles: set[s
                     continue
                 matches.append(captured.get("method") == method and captured.get("body") == body
                     and after.get("http_status", observation.get("facts", {}).get("status")) == observation.get("facts", {}).get("status")
-                    and (suppressed or after.get("details") == observation.get("body_base64")))
+                    and (suppressed or after.get('response_body_base64', after.get("details")) == observation.get("body_base64")))
             if not any(matches):
                 errors.append("Client HTTP input/output pair not found in telemetry")
     return {"status": "passed" if not errors else "failed", "errors": sorted(set(errors)),

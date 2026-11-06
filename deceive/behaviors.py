@@ -12,7 +12,9 @@ from deceive.vulnerabilities import CVE_HANDLERS, validate_cve
 
 
 def make_response(reply: Reply, behavior: str = "fallback") -> Response:
-    body = (base64.b64decode(reply.body_base64, validate=True)
+    import json
+    body = (json.dumps(reply.body_json, ensure_ascii=False, separators=(',', ':')).encode()
+            if reply.body_json is not None else base64.b64decode(reply.body_base64, validate=True)
             if reply.body_base64 is not None else reply.body.encode())
     stderr = (base64.b64decode(reply.stderr_base64, validate=True)
               if reply.stderr_base64 is not None else reply.stderr.encode())

@@ -6,6 +6,15 @@ native independent reviewers and code repair; the CLI manages test instances,
 evidence and outcomes. It does not launch coding agents by itself. This remains
 proof-of-concept tooling, not a production deployment or formal blind study.
 
+New realism runs use [research-v4](deception-research.md): source-linked dossiers
+are frozen separately from functional contracts, and schema-3 reviewers justify
+each comparison and its limits. Evidence-v3 remains readable for compatibility;
+its earlier default-maximum panels establish sampled conformance, not independently
+validated realism. Follow the current skill when preparing a new comparison.
+Research-v4 is the default for new specifications. Legacy v1–v3 reports retain
+their technical scores, but cannot establish realism qualification or plateau
+completion, even when an older record contains a passing flag.
+
 Use the host's native agents through the skill with requests such as:
 
 - Run 20 loops on the reference CVE profiles.
@@ -23,7 +32,7 @@ role/target and ten minutes from that role's first probe of the target. Existing
 sessions are scoped to role/target/service; do not share runtime data directories.
 
 ```sh
-uv run deceive assess prepare --spec examples/assessment.yaml --results-dir results/assessment
+uv run deceive assess prepare --spec examples/assessment-quality.yaml --results-dir results/assessment
 uv run deceive assess begin-loop --run results/assessment
 uv run deceive assess status --run results/assessment
 ```
@@ -36,12 +45,24 @@ their complete bases/assets without introducing explicit defaults in place of
 inheritance. Paths belong to their owning YAML. `all_profiles: true` adds catalog
 profiles as individual targets; it never merges an incompatible inventory.
 
-The example selects sudo, Apache and their reference multi-service deployment.
-A calibration target may use `calibration: server_version` with an HTTP profile;
-the controller inserts a deliberately contradictory root-page server header.
-Keep the target's claims ordinary so reviewers do not know which target is the
-control. Calibration is never a production repair target or part of the quality
-median, but detection must be verified before the overall assessment can pass.
+The quality example uses explicit assessment-only deployments with 512 session
+slots for acceptance traffic plus four bounded reviewers. Cookie sessions survive
+client transport closure until runtime expiry; production limits are unchanged.
+It assesses fictional Workbench over HTTPS 1.1–3, with frozen
+workflow goals, a public baseline and two private known-defect controls. It is
+an example of contract fidelity, not proof of real-product authenticity. Read
+[coverage and calibration](../skills/deceive-assess/references/coverage.md) before
+adapting it. Goals and controls are protocol agnostic: SSH needs its own meaningful
+workflows and controls. Public briefings expose goal descriptions, never private
+selectors, expected outputs or defect definitions. The controller supplies public
+reference contents separately. Native agents retain host access; this is not
+enforced blinding. Rotate controls when reusing the method, with a new frozen spec.
+
+The older `examples/assessment.yaml` and `contracts-assessment.yaml` retain the
+v2 diagnostic setup. They can exercise technical behavior but cannot establish
+modern realism qualification. The old `calibration: server_version` shortcut is
+also retained for legacy runs; one obvious HTTP header defect is insufficient
+for v3 sensitivity checks.
 
 `docker.build: true` builds/cache-selects an image from an immutable source
 snapshot; otherwise specify `docker.image`. The manifest records the actual
@@ -124,18 +145,39 @@ protocols through generated text.
 Run native protocol, product, attacker and consistency reviewers in fresh contexts.
 The full report/decision schemas and role briefings are in the skill references.
 Each report must match candidate/role/target and cite captured interaction IDs.
-New runs default to the frozen `review_rubric: evidence-v2`. A `score_basis`
-records the evidence band, observed facts, interaction IDs, and coverage limits.
-The controller rejects band/score mismatches and unknown score evidence. Observed
-tells require findings; limited coverage belongs in verdict confidence and the
-coverage explanation. Band midpoints anchor judgments without forcing a pass.
-Every required reviewer must capture evidence from every service and advertised
-HTTP version; an unprobed version is a coverage gap. `repeatability.json` reports
-panel-median and reviewer-score ranges only for complete assessments of the same
-candidate and comparison/rubric revision. These descriptive ranges do not prove
-improvement or replace the two-round success predicate.
-Historical reports remain readable using their recorded `legacy-v1` rubric;
-they are not reinterpreted or mixed into v2 confirmation comparisons.
+New runs default to `review_rubric: research-v4` and schema-3 reviewer reports,
+including source-linked comparisons and an explicit confidence rationale.
+Reviewers rate three role-specific criteria on anchored 0–4 scales, or null when
+unassessed. Each assessed criterion needs at least two distinct owned substantive
+interaction IDs, its completed goal sequences, expected/observed behavior and an
+approved public reference. Ratings 0–2 require evidence-linked findings; a 3 can
+describe concrete limits in comparative depth without inventing a defect.
+There is no prefilled numeric pass, band midpoint or scalar realism input.
+See [reviewer instructions](../skills/deceive-assess/references/reviewers.md).
+
+Frozen `coverage` goals distinguish selecting an operation from checking its
+result: a wrong response can establish exercised coverage and a defect. Generic
+field rules, captures and ordered sequences link inputs to follow-up effects,
+repeats and isolation without assuming HTTP or requiring all protocols to have
+sessions. Required kinds cover baseline, positive, negative, variation and repeat,
+plus state/isolation for the appropriate roles. Every service and advertised
+HTTP version must also have actual negotiated observations. The controller is
+responsible for meaningful independently sourced test design; structural gates
+cannot prove that a weak test is adequate.
+
+Every reviewer must detect major and subtle private known defects for every
+assessed protocol family through matching evidence, findings and lowered criterion
+ratings. Controls are excluded from quality medians and automatic repair. Missing
+coverage, required ratings/references, confidence or calibration yields
+`insufficiently_assessed`, retained `provisional_scores` and chart gaps. It cannot
+confirm quality or a plateau. Useful findings remain available for repair.
+
+`repeatability.json` exports descriptive ranges for complete unchanged-candidate
+assessments. Identical legitimate ratings are allowed; never add score noise to
+look independent. These are ordinal indices, not measured fidelity percentages
+or confidence intervals. Legacy v1–v3 values remain readable and explicitly
+unvalidated for modern qualification. Historical artifacts are not rewritten or
+silently rescored; prepare a new research-v4 run.
 Reports without active evidence, unknown evidence or stale candidate IDs are rejected.
 Verified unresolved findings carry forward when a later reviewer misses them;
 only an evidenced controller decision resolves or rejects them. Review scores
@@ -157,6 +199,9 @@ label these backends rather than pretending the base target was protected.
 Generic external state assertions need a network-visible probe; SSH cwd/user/uid
 checks use the live channel. Unsupported state assertions fail explicitly.
 
+Assessment definitions are fingerprinted at prepare. Changing goals, references,
+controls, thresholds or scope requires a new run. The documented resume loop-count
+extension is allowed; it does not change quality requirements.
 Code/profile changes during an active attempt invalidate its reviews. Use
 `begin-loop --retry` to stop/re-stage/review a new attempt, or repair between
 completed loops. State captures working-tree content, not only Git HEAD. Resume
@@ -169,10 +214,14 @@ it does not turn a prior unsuccessful run into a quality pass.
 
 ## Scoring and finalization
 
-Realism equals 100 minus synthetic confidence. Verdict confidence is separate.
+V3 reviewer indices are the mean of required criterion ratings multiplied by 25;
+the decision index is the median across every required reviewer. Default floors
+are 75 for each criterion and 60 for verdict confidence, separate from the median
+threshold. Legacy charts retain their original `100 - synthetic_confidence`
+values, clearly labelled unvalidated.
 Until mode defaults to max 20 loops, median realism 85 per required target/group,
 two unchanged passing candidates, no unresolved P0/P1, and all correctness/telemetry
-checks passing. Missing roles/coverage and unexplained material disagreement
+checks passing. Missing roles/coverage/calibration and unexplained material disagreement
 prevent success. Fixed mode honors the requested count instead of early success.
 
 A plateau needs a baseline plus three complete comparable cycles without the
@@ -196,7 +245,56 @@ authentication/session observations; do not publish them indiscriminately.
 
 The final SVG shows reviewer scores, medians/rolling medians, threshold, deltas,
 disagreement, profile/group heatmaps, technical gates, findings and revisions.
-Missing/stale results stay gaps. Structured state and per-loop reports reproduce
+Missing/stale/insufficient results stay gaps; dimension ratings and calibration failures are shown separately. Structured state and per-loop reports reproduce
 the chart without model calls. Finalization returns 0 for qualified results,
 1 for unmet quality, and 2 for configuration/tool errors; intermediate failed
 gates remain actionable results rather than implicit run termination.
+
+## Planned probes and audited closure (schema 2)
+
+New assessments default to `schema_version: 2`. Explicit version 1 remains readable
+with its original lifecycle semantics; existing frozen states retain their recorded
+version. Version 2 requires each reviewer to submit a
+probe plan before its first target action:
+
+```sh
+deceive assess plan --run RUN --file plan.json
+deceive assess audit --run RUN
+deceive assess end-loop --run RUN --decisions decisions.json
+```
+
+A plan has `schema_version: 1`, `candidate_id`, `role`, `target`,
+`reserve_actions` (default 10), and `actions`, an ordered list of ordinary probe
+action objects. Preflight checks service/version selection, input matching,
+ordering, session relationships and action budget, including reserved capacity.
+It consumes no probes and reveals no expected responses or control answers.
+Unsupported response-dependent selectors are reported as uncheckable, not passed.
+Plans establish intended coverage only; actual observations and independent
+source comparisons remain required. Adaptive probes remain available within the
+original budget. Preserve cleanup and evidence-repair capacity when sizing plans.
+
+`audit` reads the imported report copies and actual observations. It checks every
+required reviewer, complete goal sequences, citations, source links, plan records
+and control sensitivity. A failed audit leaves the loop active; diagnose and fix
+it before `end-loop`. Correctness failures can still receive realism review.
+An irrecoverable interruption or exhausted budget can be recorded explicitly with
+`--incomplete-reason "DIAGNOSIS" --incomplete-kind infrastructure_interruption`
+(or `incomplete_review` / `harness_error`). This records a partial round and never
+waives evidence or qualifies the run. `finish` can always preserve an interrupted
+run and produce a partial dashboard.
+
+Rules may opt into `normalize: windows_path` for captured virtual paths, or
+`normalize: casefold` for explicitly case-insensitive strings. Path normalization
+removes a matching outer quote pair and applies lexical Windows path/case rules;
+it never reads host files. Apply it to both capture and linked comparison rules.
+The selection regex must also accept the documented quoted/spaced input forms.
+Do not normalize response bodies, HTTP paths/methods or other case-sensitive data
+implicitly. Omitted normalization retains exact legacy semantics. Expected bytes,
+status and encoding assertions remain unchanged.
+
+Dashboards distinguish incomplete review (REV), harness error (HAR), infrastructure
+interruption (INF), verified deception defect (DEF), and technical gate failure
+(TECH). They show report counts separately from validated reviewer counts. Valid
+individual reviewer scores remain visible when another reviewer is incomplete;
+there is no qualifying panel median until the complete panel passes its evidence
+checks. Comparison revisions break trends and rolling aggregates.

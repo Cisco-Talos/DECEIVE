@@ -93,6 +93,42 @@ async def test_invalid_generated_shell_reply_fails_without_exposing_wrapper(runt
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("interactive", [False, True])
+async def test_rejected_model_reply_records_attempt_and_actual_failure(runtime_factory, interactive):
+    from deceive.assessment.telemetry import audit
+    from deceive.clients import ShellClient
+
+    runtime = await runtime_factory("ssh", model=True)
+    raw = '{"stdout":"untrusted output"}'
+    runtime.test_provider.complete = AsyncMock(return_value=ModelResult(raw))
+    async with await connect(runtime) as connection:
+        if interactive:
+            shell = await ShellClient.open(connection, 2)
+            result = await shell.run("generated-command", 2)
+            body, stderr, status = result.body, b"", None
+        else:
+            result = await connection.run("generated-command", check=False)
+            body, stderr, status = result.stdout, result.stderr, result.exit_status
+    await asyncio.sleep(0)
+    records = [json.loads(line) for line in runtime.test_stream.getvalue().splitlines()]
+    attempted = [r for r in records if r.get("response_stage") == "attempt"]
+    final = [r for r in records if r.get("response_stage") == "final"]
+    assert len(attempted) == len(final) == 1
+    assert attempted[0]["message"] == "LLM response"
+    assert base64.b64decode(attempted[0]["details"]).decode() == raw
+    assert final[0]["message"] == "Deception response"
+    assert final[0]["request_id"] == attempted[0]["request_id"]
+    assert base64.b64decode(final[0]["ssh_stdout"]) == b""
+    assert base64.b64decode(final[0]["ssh_stderr"]) == b"Session unavailable.\n"
+    observation = {"protocol": "ssh", "action": {"operation": "exec", "parameters": {},
+        **({"session": "terminal"} if interactive else {})}, "facts": {"outputs": [{
+        "command": "generated-command", "body_base64": base64.b64encode(body).decode(),
+        "stderr_base64": base64.b64encode(stderr).decode(), "exit_status": status}]}}
+    assert audit(records, [observation], {runtime.profiles[next(iter(runtime.listeners))].id})["status"] == "passed"
+    assert len([r for r in records if r["message"] == "Session summary"]) == 1
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("fence", ["```json\n", "```\n"])
 async def test_single_json_envelope_preserves_raw_model_and_wire_bytes(runtime_factory, fence):
     runtime = await runtime_factory("ssh", model=True)
@@ -118,6 +154,34 @@ async def test_sentinel_inside_structured_stdout_is_literal_output(runtime_facto
         result = await shell.run("generated-command", 2)
         assert result.body == b"YYY-END-OF-SESSION-YYY" and result.prompt
         assert (await shell.run("exit", 2)).exit_status == 0
+
+
+@pytest.mark.asyncio
+async def test_literal_printf_and_private_history_need_no_model(runtime_factory):
+    from deceive.clients import ShellClient
+
+    runtime = await runtime_factory('ssh', model=True)
+    runtime.test_provider.complete = AsyncMock(side_effect=AssertionError('Unexpected model call'))
+    async with await connect(runtime) as connection:
+        result = await connection.run("printf 'wire%%%'")
+        assert (result.stdout, result.exit_status) == (b'wire%', 1)
+        assert b'invalid conversion' in result.stderr
+    async with await connect(runtime) as connection:
+        owner = await ShellClient.open(connection, 2)
+        await owner.run('echo PRIVATE_LITERAL > /tmp/history-marker', 2)
+        history = await owner.run('history', 2)
+        assert b'echo PRIVATE_LITERAL > /tmp/history-marker' in history.body
+        assert b'history\n' in history.body
+        await owner.run('exit', 2)
+    async with await connect(runtime) as connection:
+        other = await ShellClient.open(connection, 2)
+        history = await other.run('history', 2)
+        assert history.body == b'    1  history\n'
+        await other.run('exit', 2)
+    async with await connect(runtime) as connection:
+        result = await connection.run('history')
+        assert (result.stdout, result.stderr, result.exit_status) == (b'', b'', 0)
+    runtime.test_provider.complete.assert_not_awaited()
 
 
 @pytest.mark.asyncio

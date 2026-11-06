@@ -35,6 +35,12 @@ class Broker:
         if handle not in self.current["targets"]:
             raise ValueError("Unknown target handle")
         target = self.current["targets"][handle]
+        if self.spec.schema_version == 2 and role != 'acceptance':
+            from deceive.assessment.workflow import plan_path
+            path = plan_path(self.run, self.current, role, handle)
+            plan = load_json(path) if path.exists() else {}
+            if not plan.get('ready') or plan.get('candidate_id') != self.current['candidate_id']:
+                raise ValueError('Run assess plan successfully before spending reviewer probe actions')
         if target.get("error"):
             raise ValueError("Target unavailable; controller must diagnose and relaunch it")
         endpoints = target["endpoints"]
@@ -96,7 +102,7 @@ class Broker:
                 result = {"closed": True}
                 self.stop.set()
             elif request.get("operation") == "ping":
-                result = {"ready": True, "pid": os.getpid()}
+                result = {"ready": True, "pid": os.getpid(), 'active':self.active}
             else:
                 result = await self.probe(request["role"], request["target"],
                                           ProbeAction.model_validate(request["action"]))

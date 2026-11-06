@@ -1,0 +1,91 @@
+schema_version: 2
+id: sshhole-2026-123158
+version: '1'
+description: Generic Alpine OpenSSH musl password-authentication bypass (CVE-2026-123158).
+protocol: ssh
+requirements:
+  protocol: ssh
+  preferred_port: 8022
+  scope: connection
+  capabilities: [ssh.commands, ssh.auth_policy, 'behavior:identity', 'behavior:rule']
+identity:
+  hostname: edge-build-07
+  os: Alpine Linux v3.24.3
+  kernel: 6.12.34-0-lts
+  architecture: aarch64
+  username: deploy
+  uid: 1001
+  ssh_version: OpenSSH_10.3p1
+  banner: |
+    Alpine Linux 3.24.3
+    Linux edge-build-07 6.12.34-0-lts aarch64
+
+    Authorized access only. Activity on this host may be monitored.
+ssh_auth:
+  kind: musl-star-bypass
+  password_authentication: true
+  use_pam: false
+  patched: false
+  permit_root_login: prohibit-password
+  accounts:
+    root: {shadow: '*', uid: 0, shell: /bin/ash}
+    admin: {shadow: '$6$', password: fixture-admin-secret, uid: 1000, shell: /bin/ash}
+    deploy: {shadow: '*', uid: 1001, shell: /bin/ash}
+    backup: {shadow: '*', uid: 1002, shell: /bin/ash}
+    daemon: {shadow: '*', uid: 2, shell: /sbin/nologin}
+files:
+  /etc/hostname: "edge-build-07\n"
+  /etc/motd: |
+    Alpine Linux 3.24.3
+    Linux edge-build-07 6.12.34-0-lts aarch64
+
+    Authorized access only. Activity on this host may be monitored.
+  /etc/alpine-release: "3.24.3\n"
+  /etc/os-release: "NAME=\"Alpine Linux\"\nID=alpine\nVERSION_ID=3.24.3\nPRETTY_NAME=\"Alpine Linux v3.24.3\"\n"
+  /etc/passwd: |
+    root:x:0:0:root:/root:/bin/ash
+    admin:x:1000:1000:Administrator:/home/admin:/bin/ash
+    deploy:x:1001:1001:Deployment:/home/deploy:/bin/ash
+    backup:x:1002:1002:Backup:/home/backup:/bin/ash
+    daemon:x:2:2:Daemon:/sbin:/sbin/nologin
+  /etc/ssh/sshd_config: |
+    PasswordAuthentication yes
+    PermitRootLogin prohibit-password
+  /home/deploy/.profile: "# ~/.profile: settings for the deploy login shell.\n"
+  /home/deploy/README.txt: "Deployment staging directory: /home/deploy/releases\n"
+  /home/backup/.profile: "# ~/.profile: settings for the backup login shell.\n"
+  /home/admin/.profile: "# ~/.profile: settings for the admin login shell.\n"
+behaviors:
+  - id: package-version
+    kind: rule
+    match: {command: 'apk info -v openssh'}
+    reply: {body: "openssh-10.3_p1-r1\n"}
+  - id: shadow-protected
+    kind: rule
+    match: {command: 'cat /etc/shadow'}
+    reply: {stderr: "cat: can't open '/etc/shadow': Permission denied\n", exit_status: 1}
+  - id: alpine-virtual-files
+    kind: virtual_files
+    options: {directories: [/tmp, /var/tmp, /home/deploy/releases], listing_time: 'Nov  5 12:00'}
+  - id: identity
+    kind: identity
+fallback: llm_if_available
+fallback_reply: {stderr: "sh: command not found\n", exit_status: 127}
+ssh_response_format: json
+prompt: |
+  Simulate the current Alpine Linux 3.24.3 edge-build-07 session using ash shell
+  conventions. Preserve the supplied account, identity, virtual files and cwd.
+  The runtime handles authentication and declared commands first. Answer only
+  other current input, with plausible stdout, stderr and exit status. Never
+  claim host execution or durable changes outside the private virtual view.
+references:
+  - https://github.com/CVEProject/cvelistV5/blob/main/cves/2026/123xxx/CVE-2026-123158.json
+  - https://sshhole.com/
+  - https://www.alpinelinux.org/posts/2026-11-05-openssh-password-authentication-bypass/
+  - https://www.openssh.org/releasenotes.html#10.6p2
+limitations:
+  - Only a generic Alpine host is emulated; the official tiny-cloud alpine/doas privilege path is excluded.
+  - Public-key authentication and account key provisioning are outside this profile's supported surface.
+  - Authentication matches the researched 257-1024-byte boundary for supported passwords; OpenSSH packet algorithms and timing are not cloned.
+  - Core identity and discovery commands are virtual; no real shell, PAM, musl, shadow database, host files or process execution exists.
+  - Open-ended command replies require an explicitly configured model provider; without one, unsupported commands use the deterministic fallback.

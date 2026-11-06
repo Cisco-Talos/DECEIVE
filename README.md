@@ -65,7 +65,7 @@ to enable LLM intent summaries. Without it, summaries use judgement `UNKNOWN`.
 A profile using generative fallback must have a provider; deterministic profiles
 can run entirely without one.
 
-The bundled `linux-ssh` version 3 requests structured model replies so stdout,
+The bundled `linux-ssh` version 5 requests structured model replies so stdout,
 stderr and command exit status remain separate. Output bytes retain their trailing
 newlines, including commands that emit none. Interactive terminals display both
 streams before the server-owned prompt; `echo $?` and bare `exit` use the previous
@@ -74,6 +74,16 @@ they select `ssh_response_format: json`. See the [SSH reply contract](docs/profi
 Its opt-in `virtual_files` behavior uses one bounded private view for basic file
 reads, listings and supported mutations, so generated commands receive the same
 current file facts. It does not implement a complete shell or filesystem.
+The profile also guides the model to preserve ordinary stdout when a failing command
+emits diagnostics on stderr; this remains generative behavior rather than a full
+command implementation.
+Single-file `wc -c`/`wc --bytes` uses the current virtual bytes deterministically,
+including private writes and UTF-8 content, so byte counts agree with file reads.
+Literal-only `printf` (one format argument without escapes/expansion, including
+`%%`) preserves output bytes and reports an unfinished `%` with partial stdout,
+stderr and status 1. Richer formats remain on fallback. Bare interactive `history`
+lists only the session's bounded input transcript; fresh non-interactive commands
+have empty history. History options and host history files are outside this support.
 
 Bedrock uses the same deployment YAML provider configuration. Install the native
 extra with `uv sync --extra bedrock`, then select the provider from your SSH
@@ -100,7 +110,7 @@ The same SSH command can run in the standard container by passing
 `-e OPENAI_API_KEY` and mapping port 8022. Keys and API credentials are never built
 into the image.
 
-Two reference CVE profiles also run without a model or API key:
+The sudo and Apache reference CVE profiles run without a model or API key:
 
 ```sh
 uv run deceive serve --profile sudo-2019-14287
@@ -111,8 +121,37 @@ The sudo profile exposes the agreed CLI probes and simulated UID bypass over SSH
 on port 8022. The Apache profile exposes single-encoded traversal to declared
 virtual files over HTTP/1.1 on port 8080. They do not run vulnerable software or
 execute payloads. See their [approved criteria](docs/reference-acceptance-proposal.md).
+Interactive SSH accepts Enter from a local terminal, echoes typed characters when
+the client requests terminal echo, and supports Backspace for basic line editing.
+Type `exit` to close the simulated shell. Full PTY line discipline remains outside
+the current emulation.
+The sudo and sshhole profiles now include virtual home content and basic navigation.
+Their declared CVE interactions stay deterministic without credentials. With an
+explicitly configured provider, unfamiliar commands use bounded model fallback
+guided by the same virtual identity and files; model-free mode retains a limited
+fallback. Neither mode executes commands on the host.
 Sudo profile/suite version 2 uses the human-approved stock-style denial wording;
 the original version 1 criteria and agreement remain in packaged history.
+The model-free `sshhole-2026-123158` profile emulates the Alpine/OpenSSH musl
+password-authentication bypass with real SSH authentication. `deploy` and
+`backup` have `*` shadow markers; `admin` supplies the separate password-hash
+prerequisite. Root password login stays prohibited by default, while the
+acceptance suite tests an explicitly enabled root variant. For example, a
+300-byte ASCII password succeeds for `deploy` where a 256-byte one fails:
+
+```sh
+uv run deceive serve --profile sshhole-2026-123158
+ssh deploy@localhost -p 8022
+```
+
+See its [approved behavior and limits](docs/sshhole-acceptance-proposal.md).
+This emulates the authentication outcome and virtual Alpine facts; it does not
+run a vulnerable OpenSSH build or execute commands on the host.
+Creating a deception now includes an active, research-backed realism assessment
+after deterministic acceptance. The authoring skill hands the new profile to
+the separate assessment skill for bounded reviewer, repair and confirmation
+loops, with a dashboard even when quality remains unmet. Research-only or draft
+requests do not start a run. See [active assessment](docs/assessment.md).
 To run both in one process, use
 `uv run deceive serve --config examples/reference-deployment.yaml`.
 
@@ -121,6 +160,26 @@ and install it using `uv tool install dist/deceive-0.1.0-py3-none-any.whl`. Prov
 extras are `openai` (also Azure), `ollama`, `bedrock`, `gemini`, and `all-providers`.
 
 ## Deployment and profiles
+
+Schema version 2 profiles can define required HTTP/command contracts, typed
+customization parameters with usable defaults, and optional organization values.
+The fictional `workbench-http-linux`, `workbench-http-cmd`, `workbench-http-ps51`
+and `workbench-http-ps7` examples run without a model and exercise the shared
+virtual command service over HTTPS 1.1, 2 and 3:
+
+```sh
+uv run deceive profile show workbench-http-linux
+uv run deceive config validate --config examples/contracts-deployment.yaml
+uv run deceive serve --profile workbench-http-linux
+```
+
+Use `--organization FILE` to supply shared values. Deployment YAML supports
+distinct instance IDs and per-instance organization/parameter overrides. Required
+interactions can use deterministic responses or checked model replies with one
+bounded repair and optional deterministic fallback. Version 1 profiles and
+approved CVE suites retain their existing semantics. See the
+[contract and customization guide](docs/behavior-contracts.md) for authoring,
+state/command limits, inspection and evaluation of bound instances.
 
 Install the operator, authoring and assessment skills into your agent's user
 directory from the host CLI:
@@ -201,6 +260,11 @@ See [configuration](docs/configuration.md), [profiles and extension interfaces](
 and [evaluation and authoring](docs/evaluation.md). The repository authoring skill
 is [deceive-author](skills/deceive-author/SKILL.md).
 
+Authoring and refinement include source-linked [research dossiers](docs/deception-research.md)
+beside the bundled deceptions. Research-backed assessment uses these independent
+product/platform comparisons in addition to functional contracts; unassessed
+realism remains a gap rather than a default passing score.
+
 ## Migrating the SSH-only version
 
 The old entrypoint prints migration guidance. Convert your INI explicitly:
@@ -231,6 +295,10 @@ Canonical decimal status strings from text-only models are normalized before
 strict validation; other malformed replies remain failures. Assessment audits
 keep interactive and exec output separate and require a distinct captured request
 for each SSH observation.
+Rejected structured SSH replies are recorded as `response_stage: attempt` with
+their raw model text. The delivered `Session unavailable` failure is a separate
+deterministic final response with the same request ID, exact stream bytes and
+exit status 1; the session closes without another model call.
 
 ```sh
 uv run deceive profile validate demo-http
@@ -259,11 +327,16 @@ lifecycle/probe/report helpers and a repository
 [deceive-assess skill](skills/deceive-assess/SKILL.md) for native independent
 reviewers and repeated repairs. Docker targets are exposed only on localhost;
 the skill preserves current edits and does not commit or push automatically.
-Start with `examples/assessment.yaml`. Correctness, realism and telemetry results
-remain separate, and every finalized run produces a graphical SVG dashboard.
-New runs use the versioned `evidence-v2` scoring rubric, require cited score
-evidence and coverage of each advertised HTTP version, and export repeatability
-ranges for repeated reviews of an unchanged candidate.
+Start with [the research-backed assessment example](examples/assessment-research.yaml).
+Correctness, realism and telemetry remain separate; every finalized run produces
+an SVG dashboard. New runs use `research-v4`: independent source-linked comparisons,
+evidence-backed criterion ratings, frozen workflow coverage and major/subtle
+known-defect controls for every reviewer/protocol family. Missing evidence or failed calibration means
+`insufficiently_assessed`, never a passing default. Legacy scores remain readable
+but cannot confirm modern realism quality. The separate assessment skill owns
+this workflow; the umbrella skill routes to it. New assessments default to schema 2 and require
+`assess plan` before reviewer probes and `assess audit` before loop closure.
+Dashboard gap labels distinguish review, harness, infrastructure and target issues.
 
 ## Development and verification
 
