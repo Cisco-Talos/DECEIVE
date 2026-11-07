@@ -12,7 +12,9 @@ def ssh_output_matches(record: dict, output: dict, interactive: bool) -> bool:
         body = base64.b64decode(record.get("ssh_stdout", record.get("details", "")), validate=True)
         stderr = base64.b64decode(record.get("ssh_stderr", ""), validate=True)
         if record.get("interactive"):
-            body += stderr
+            body = (b''.join(base64.b64decode(item[1], validate=True)
+                            for item in record['terminal_chunks'])
+                    if record.get('terminal_chunks') else body + stderr)
         elif output.get("stderr_base64", "") != base64.b64encode(stderr).decode():
             return False
         if output.get("exit_status") is not None and "ssh_exit_status" in record:
@@ -28,6 +30,33 @@ def audit(records: list[dict], observations: list[dict], allowed_profiles: set[s
     inputs, responses, summaries = {}, {}, {}
     paired = []
     used_ssh_requests = set()
+    terminal_offsets = {}
+    terminal_input_offsets = {}
+    streams, input_streams, channel_records = {}, {}, {}
+    for record in records:
+        if record.get('message') not in {'Terminal output', 'Terminal input'}:
+            continue
+        key = (record.get('task_name'), record.get('channel_id'))
+        channel_records[key] = record
+        inventory = streams if record['message'] == 'Terminal output' else input_streams
+        inventory[key] = inventory.get(key, b'') + base64.b64decode(record['details'])
+
+    def terminal_channels(facts: dict) -> list[tuple]:
+        version = facts.get('client_version')
+        return [key for key, record in channel_records.items()
+                if (record.get('ssh_client_version') == version if version else
+                    record.get('src_port') == facts.get('source_port'))]
+
+    def match_terminal(channels: list[tuple], capture: bytes, sent: bytes) -> bool:
+        for key in channels:
+            output_offset = terminal_offsets.get(key, 0)
+            input_offset = terminal_input_offsets.get(key, 0)
+            if (streams.get(key, b'')[output_offset:output_offset + len(capture)] == capture
+                    and input_streams.get(key, b'')[input_offset:input_offset + len(sent)] == sent):
+                terminal_offsets[key] = output_offset + len(capture)
+                terminal_input_offsets[key] = input_offset + len(sent)
+                return True
+        return False
     required = {"timestamp", "level", "task_name", "src_ip", "src_port", "dst_ip", "dst_port",
                 "message", "sensor_name", "sensor_protocol"}
     for record in records:
@@ -58,6 +87,8 @@ def audit(records: list[dict], observations: list[dict], allowed_profiles: set[s
             else:
                 if record.get('response_stage', 'final') == 'final':
                     responses.setdefault(request, []).append(record)
+                elif record.get('response_stage') == 'component' and record.get('component_command'):
+                    pass
                 elif record.get('response_stage') != 'attempt' or record.get('attempt') not in (1, 2):
                     errors.append('Invalid model attempt metadata')
                 expected_origin = "llm" if message == "LLM response" else "deterministic"
@@ -96,11 +127,31 @@ def audit(records: list[dict], observations: list[dict], allowed_profiles: set[s
         }:
             continue
         if observation["protocol"] == "ssh":
+            if observation['action']['operation'] == 'terminal':
+                facts = observation.get('facts', {})
+                capture = b''.join(base64.b64decode(item.get('raw_base64', ''))
+                    for item in facts.get('terminal', []))
+                sent = ''.join(event.get('send', '') for event in
+                               observation['action']['parameters'].get('events', [])).encode()
+                if not match_terminal(terminal_channels(facts), capture, sent):
+                    errors.append('Client terminal capture not found in ordered telemetry')
+                continue
             outputs = observation.get("facts", {}).get("outputs", [])
             action = observation["action"]
             parameters = action.get("parameters", {})
             interactive = bool(action.get("session") or parameters.get("interactive") or
                                len(parameters.get("commands", [])) > 1)
+            channels = terminal_channels(observation.get('facts', {}))
+            if interactive and channels:
+                capture = b''.join(base64.b64decode(output['raw_base64']) for output in outputs)
+                # The named command client consumes the login banner once; later
+                # observations report it as metadata without reading it again.
+                if all(key not in terminal_offsets for key in channels):
+                    capture = base64.b64decode(observation['facts'].get('banner_base64', '')) + capture
+                sent = ''.join(output['command'] + '\n' for output in outputs).encode()
+                if not match_terminal(channels, capture, sent):
+                    errors.append('Client SSH input/output pair not found in ordered terminal telemetry')
+                continue
             for output in outputs:
                 command = base64.b64encode(output["command"].encode()).decode()
                 match = next((before["request_id"] for before, after in paired

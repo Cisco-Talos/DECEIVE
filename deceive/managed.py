@@ -18,6 +18,7 @@ import uuid
 from deceive.config import fingerprint, load_profile
 from deceive.composition import Plan
 from deceive.models import Deployment
+from deceive.credentials import literal_name, selected_environment
 from deceive.runtime import Runtime
 from deceive.telemetry import Telemetry
 
@@ -44,15 +45,16 @@ def snapshot_profile(reference: str, destination: Path, seen: tuple[str, ...] = 
 
 
 class DockerCLI:
-    def command(self, *args: str, timeout: float = 30) -> subprocess.CompletedProcess:
+    def command(self, *args: str, timeout: float = 30,
+                env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
         try:
             return subprocess.run(["docker", *args], capture_output=True, text=True,
-                                  timeout=timeout, check=False)
+                                  timeout=timeout, check=False, env=env)
         except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
             raise RuntimeError("Docker is unavailable or timed out; check the local daemon") from exc
 
-    def call(self, *args: str, timeout: float = 30) -> str:
-        result = self.command(*args, timeout=timeout)
+    def call(self, *args: str, timeout: float = 30, env: dict[str, str] | None = None) -> str:
+        result = self.command(*args, timeout=timeout, **({'env': env} if env is not None else {}))
         if result.returncode:
             # Do not expose environment values or configuration through daemon errors.
             raise RuntimeError(f"Docker {args[0]} failed; check the image, daemon, mounts and port availability")
@@ -163,7 +165,7 @@ class DeploymentManager:
     async def start(self, name: str, config: Deployment | None, *, image: str | None = None,
                     publish_host: str = "127.0.0.1", publish: tuple[str, ...] | list[str] = (),
                     env_names: tuple[str, ...] | list[str] = (), aws_dir: Path | None = None,
-                    timeout: float = 30) -> dict:
+                    timeout: float = 30, skip_preflight: bool = False) -> dict:
         if not 0 < timeout <= 600:
             raise ValueError("Startup timeout must be greater than 0 and at most 600 seconds")
         if ipaddress.ip_address(publish_host).version != 4:
@@ -172,7 +174,8 @@ class DeploymentManager:
         if config is None and not (self.directory(name) / "record.json").exists():
             raise ValueError("A new deployment requires a profile or deployment configuration")
         options = {"publish_host": publish_host, "publish": sorted(publish),
-                   "env_names": sorted(env_names), "aws_dir": str(aws_dir.resolve()) if aws_dir else None}
+                   "env_names": sorted(env_names), "aws_dir": str(aws_dir.resolve()) if aws_dir else None,
+                   'skip_preflight': skip_preflight}
         runtime = None
         if config is not None:
             runtime = Runtime(config, telemetry=Telemetry(config.sensor_name, stream=io.StringIO()))
@@ -185,6 +188,8 @@ class DeploymentManager:
         with self.locked(name) as directory:
             if (directory / "record.json").exists():
                 record = self.record(name)
+                if config is None and skip_preflight and not record['options'].get('skip_preflight'):
+                    raise ValueError('Restart retains its preflight policy; replace the stopped container to change it')
                 if config is not None and record.get('plan_fingerprint') and record['plan_fingerprint'] != fingerprint(
                     {key: fingerprint(value) for key, value in plan.profiles.items()}
                 ):
@@ -201,6 +206,8 @@ class DeploymentManager:
                 if info is None:
                     raise ValueError("Managed container is missing; remove its record before starting a replacement")
                 if not info["State"].get("Running"):
+                    if 'skip_preflight' not in record['options']:
+                        raise ValueError('Retained container predates startup preflight; replace it to adopt the current startup policy (data is retained)')
                     self.docker.call("start", record["container"])
                 self.wait_ready(record, timeout)
                 return self.status(name)
@@ -255,7 +262,12 @@ class DeploymentManager:
                     for binding in listener["bindings"]:
                         command.extend(["--publish", f'{publish_host}:{binding["host_port"]}:{binding["container_port"]}/{binding["transport"]}'])
                 command.extend([image_id, "serve", "--config", "/config/deployment.json"])
-                record["container"] = self.docker.call(*command)
+                if not skip_preflight:
+                    command.append('--preflight')
+                selected = set(deployment['providers'])
+                values = selected_environment(config.providers, selected)
+                record["container"] = self.docker.call(*command,
+                    **({'env': dict(os.environ) | values} if values else {}))
                 write_json(directory / "record.json", record)
                 for sock in reservations:
                     sock.close()
@@ -291,7 +303,8 @@ class DeploymentManager:
         if set(overrides) - {listener.name for listener in plan.listeners}:
             raise ValueError("Publish override names an unknown listener")
         raw = config.model_dump(mode="json")
-        raw.update(data_dir="/data", listeners=[], deceptions=[], deception_defaults={}, organization=None)
+        raw.update(data_dir="/data", listeners=[], deceptions=[], deception_defaults={},
+                   organization=None, default_provider=None)
         if config.log_file:
             raw["log_file"] = "/data/telemetry.jsonl"
             record["notes"].append("Configured file telemetry is retained in the data volume at /data/telemetry.jsonl")
@@ -342,9 +355,11 @@ class DeploymentManager:
                 "host": host, "bindings": bindings})
             raw["listeners"].append(row)
         selected = {listener.provider for listener in plan.listeners if listener.provider}
+        values = selected_environment(config.providers, selected)
         raw["providers"] = {name: value for name, value in raw["providers"].items() if name in selected}
         for name in selected:
             provider = config.providers[name]
+            raw['providers'][name]['env_file'] = None
             if provider.api_key_file:
                 if not provider.api_key_file.is_file():
                     raise ValueError("Provider secret file is missing")
@@ -352,17 +367,17 @@ class DeploymentManager:
                 mounts.append((provider.api_key_file, target))
                 raw["providers"][name]["api_key_file"] = target
             elif provider.api_key_env:
-                if provider.api_key_env not in os.environ:
+                if provider.api_key_env not in values:
                     raise ValueError(f"Set credential environment variable {provider.api_key_env}")
                 environment.add(provider.api_key_env)
+            elif provider.api_key is not None:
+                variable = literal_name(name)
+                raw['providers'][name]['api_key_env'] = variable
+                environment.add(variable)
             else:
-                environment.update(key for key in {
-                    "openai": ["OPENAI_API_KEY"], "azure": ["AZURE_OPENAI_API_KEY"],
-                    "gemini": ["GOOGLE_API_KEY", "GEMINI_API_KEY"],
-                    "bedrock": ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN",
-                                "AWS_DEFAULT_REGION", "AWS_REGION", "AWS_PROFILE", "AWS_DEFAULT_PROFILE"],
-                }.get(provider.kind, []) if key in os.environ)
-            if provider.kind == "bedrock" and provider.aws_profile and aws_dir is None:
+                environment.update(values)
+            if provider.kind == "bedrock" and (provider.aws_profile or values.get('AWS_PROFILE')
+                    or values.get('AWS_DEFAULT_PROFILE')) and aws_dir is None:
                 raise ValueError("A named AWS profile requires --aws-dir pointing to its local .aws directory")
         if aws_dir:
             if not aws_dir.is_dir():

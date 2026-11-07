@@ -1,9 +1,19 @@
 ---
+
 name: deceive-assess
 description: Run active DECEIVE assessment and repair loops with independent native reviewers, frozen workflow coverage, known-defect calibration controls and dashboards. Use for realism assessments, repeated improvement loops or auditing assessment validity; separate from profile authoring and public deployment.
 ---
 
 # Assess and improve DECEIVE deceptions
+
+For whole-device SSH targets, read [device sessions](../../docs/device-sessions.md).
+Use ignored local provider configuration rather than personal AWS profile names,
+model IDs or credentials in shipped definitions. Online qualification specs select
+`require_live_model: true`, explicit providers and provider networking. Offline CI
+and scripted provider tests cannot qualify actual model realism. Include ordinary,
+nested, state/isolation and full-screen application journeys in frozen coverage.
+Use the `terminal` driver for raw send/resize/wait events and public screen/cursor
+captures; use distinct captures per observation and preserve telemetry auditing.
 
 This skill owns assessment orchestration and repair. The `deceive assess` CLI
 manages Docker, evidence, checkpoints, gates and charts; it does not launch coding

@@ -79,3 +79,36 @@ def test_empty_deployment_listing_does_not_create_state(tmp_path, capsys):
     assert main(["deployment", "list", "--state-dir", str(directory), "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["data"]["deployments"] == []
     assert not directory.exists()
+
+
+def test_config_validation_is_live_by_default_and_offline_is_explicit(tmp_path, capsys, monkeypatch):
+    from deceive.providers import ModelResult
+    calls = []
+
+    class Provider:
+        def __init__(self, config, timeout, concurrency):
+            calls.append(('initialize', config.model))
+
+        async def complete(self, messages):
+            calls.append(('complete', len(messages)))
+            return ModelResult('ready')
+
+        async def close(self):
+            calls.append(('close',))
+
+    monkeypatch.setattr('deceive.runtime.SDKProvider', Provider)
+    path = tmp_path / 'deployment.yaml'
+    path.write_text(yaml.safe_dump({'data_dir': str(tmp_path / 'not-created'),
+        'providers': {'selected': {'kind': 'ollama', 'model': 'configured-model'}},
+        'listeners': [{'name': 'ssh', 'protocol': 'ssh', 'profile': 'linux-device',
+                       'provider': 'selected', 'host': '127.0.0.1', 'port': 0}]}))
+    assert main(['config', 'validate', '--config', str(path), '--json']) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert any(call[0] == 'complete' for call in calls)
+    assert result['data']['validation']['verification'] == 'live-verified'
+    assert not (tmp_path / 'not-created').exists()
+    calls.clear()
+    assert main(['config', 'validate', '--config', str(path), '--offline', '--json']) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result['data']['validation']['verification'] == 'offline-valid'
+    assert not calls

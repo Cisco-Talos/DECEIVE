@@ -33,6 +33,25 @@ class SSHReply(Model):
         return self
 
 
+class DeviceEffects(Model):
+    write_files: dict[str, StrictStr] = Field(default_factory=dict, max_length=32)
+    remove_files: list[StrictStr] = Field(default_factory=list, max_length=32)
+    add_executables: list[StrictStr] = Field(default_factory=list, max_length=32)
+    remove_executables: list[StrictStr] = Field(default_factory=list, max_length=32)
+    configuration: dict[str, StrictStr] = Field(default_factory=dict, max_length=8)
+    cwd: StrictStr | None = None
+
+
+class Dialogue(Model):
+    prompt: StrictStr = Field(min_length=1, max_length=256)
+    echo: StrictBool = True
+
+
+class DeviceReply(SSHReply):
+    effects: DeviceEffects = Field(default_factory=DeviceEffects)
+    dialogue: Dialogue | None = None
+
+
 def unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
     value = {}
     for key, item in pairs:
@@ -42,7 +61,7 @@ def unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
     return value
 
 
-def parse_reply(text: str) -> Response:
+def parse_reply(text: str, *, allow_effects: bool = False) -> Response:
     payload = text.strip()
     # Some text-only models add a single JSON fence despite formatting instructions.
     # Unwrap only that envelope; stream bytes inside the object remain untouched.
@@ -55,11 +74,13 @@ def parse_reply(text: str) -> Response:
     if isinstance(value, dict) and isinstance(value.get("exit_status"), str):
         if re.fullmatch(r"0|[1-9][0-9]{0,2}", value["exit_status"]):
             value["exit_status"] = int(value["exit_status"])
-    reply = SSHReply.model_validate(value)
+    reply = (DeviceReply if allow_effects else SSHReply).model_validate(value)
     return Response(body=stream_bytes(reply.stdout, reply.stdout_base64),
                     stderr=stream_bytes(reply.stderr, reply.stderr_base64),
                     exit_status=reply.exit_status, close=reply.close,
-                    origin="llm", behavior="llm", model_output=text)
+                    origin="llm", behavior="llm", model_output=text,
+                    effects=reply.effects.model_dump() if allow_effects else {},
+                    dialogue=reply.dialogue.model_dump() if allow_effects and reply.dialogue else None)
 
 
 def transcript_reply(response: Response) -> str:

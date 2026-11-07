@@ -1,0 +1,847 @@
+schema_version: 1
+journeys:
+- id: sudo-device-exploration
+  profile: sudo-2019-14287
+  prompt: 'guest@build-node-03:~$ '
+  steps:
+  - {command: pwd, contains: [/home/guest]}
+  - {command: hostname, contains: [build-node-03]}
+  - {command: whoami, contains: [guest]}
+  - {command: id, contains: ['uid=1000(guest)']}
+  - {command: uname -s, contains: [Linux]}
+  - {command: uname -r, contains: [4.19.0-5-amd64]}
+  - {command: ls, contains: [README.txt]}
+  - {command: ls -la, contains: [.bashrc, builds]}
+  - {command: ls /bin, contains: [bash, cat, ls]}
+  - {command: ls /usr/bin, contains: [id, python, sudo]}
+  - {command: which python, contains: [/usr/bin/python]}
+  - {command: python --version, contains: [Python 3.7.3]}
+  - {command: "python -c 'print(1 + 2)'", contains: ['3']}
+  - {command: cat /etc/hostname, contains: [build-node-03]}
+  - {command: cat /etc/passwd, contains: ['guest:x:1000']}
+  - {command: sudo -V, contains: [Sudo version 1.8.27]}
+  - {command: sudo -l, contains: ['(ALL, !root) NOPASSWD: /usr/bin/id']}
+  - {command: sudo -u#-1 id, contains: ['uid=0(root)']}
+  - {command: id -u, contains: ['1000']}
+  - {command: echo private > /tmp/note, contains: []}
+  - {command: cat /tmp/note, contains: [private]}
+  - {command: rm /tmp/note, contains: []}
+  - {command: cat /tmp/note, contains: [No such file]}
+- id: linux-device-exploration
+  profile: linux-device
+  prompt: 'guest@build-node-03:~$ '
+  steps:
+  - command: uname -s
+    contains:
+    - Linux
+  - command: hostname
+    contains:
+    - build-node-03
+  - command: whoami
+    contains:
+    - guest
+  - command: id -u
+    contains:
+    - '1000'
+  - command: pwd
+    contains:
+    - /home/guest
+  - command: ls
+    contains:
+    - README.txt
+  - command: cat README.txt
+    contains:
+    - Device workspace
+  - command: uname -r
+    contains:
+    - 5.15.0
+  - command: uname -m
+    contains:
+    - x86_64
+  - command: cat notes.txt
+    contains:
+    - alpha
+    - gamma
+  - command: head -n 1 notes.txt
+    contains:
+    - alpha
+  - command: tail -n 1 notes.txt
+    contains:
+    - gamma
+  - command: cat notes.txt | grep beta
+    contains:
+    - beta
+  - command: cat notes.txt | wc -l
+    contains:
+    - '3'
+  - command: which cat
+    contains:
+    - /usr/bin/cat
+  - command: env
+    contains:
+    - HOME=/home/guest
+  - command: ps
+    contains:
+    - worker
+  - command: cat missing
+    contains:
+    - No such file
+  - command: 'false'
+    contains: []
+  - command: echo $?
+    contains:
+    - '1'
+  - command: help
+    contains:
+    - Virtual commands
+- id: linux-device-private
+  profile: linux-device
+  prompt: 'guest@build-node-03:~$ '
+  steps:
+  - command: echo private > /tmp/journey
+    contains: []
+  - command: cat /tmp/journey
+    contains:
+    - private
+  - command: wc -c /tmp/journey
+    contains:
+    - '8'
+  - command: cp /tmp/journey /tmp/copy
+    contains: []
+  - command: cat /tmp/copy
+    contains:
+    - private
+  - command: echo extra >> /tmp/copy
+    contains: []
+  - command: tail -n 1 /tmp/copy
+    contains:
+    - extra
+  - command: mv /tmp/copy /tmp/moved
+    contains: []
+  - command: cat /tmp/copy
+    contains:
+    - No such file
+  - command: cat /tmp/moved
+    contains:
+    - private
+    - extra
+  - command: chmod 000 /tmp/moved
+    contains: []
+  - command: cat /tmp/moved
+    contains:
+    - Permission denied
+  - command: chmod 644 /tmp/moved
+    contains: []
+  - command: stat /tmp/moved
+    contains:
+    - 'Mode: 644'
+  - command: rm /tmp/moved
+    contains: []
+  - command: cat /tmp/moved
+    contains:
+    - No such file
+  - command: hostname private-device
+    contains: []
+    prompt: 'guest@private-device:~$ '
+  - command: hostname
+    contains:
+    - private-device
+    prompt: 'guest@private-device:~$ '
+  - command: cat /etc/hostname
+    contains:
+    - private-device
+    prompt: 'guest@private-device:~$ '
+  - command: hostname build-node-03
+    contains: []
+  - command: hostname
+    contains:
+    - build-node-03
+  - command: rm /tmp/journey
+    contains: []
+- id: linux-device-nested
+  profile: linux-device
+  prompt: 'guest@build-node-03:~$ '
+  steps:
+  - command: export TEAM=outer
+    contains: []
+  - command: echo $TEAM
+    contains:
+    - outer
+  - command: bash
+    contains: []
+  - command: export TEAM=inner
+    contains: []
+  - command: echo $TEAM
+    contains:
+    - inner
+  - command: cd /tmp
+    contains: []
+    prompt: 'guest@build-node-03:/tmp$ '
+  - command: pwd
+    contains:
+    - /tmp
+    prompt: 'guest@build-node-03:/tmp$ '
+  - command: echo shared > /tmp/nested
+    contains: []
+    prompt: 'guest@build-node-03:/tmp$ '
+  - command: sh
+    contains: []
+    prompt: 'guest@build-node-03:/tmp$ '
+  - command: export TEAM=deep
+    contains: []
+    prompt: 'guest@build-node-03:/tmp$ '
+  - command: echo $TEAM
+    contains:
+    - deep
+    prompt: 'guest@build-node-03:/tmp$ '
+  - command: exit
+    contains: []
+    prompt: 'guest@build-node-03:/tmp$ '
+  - command: echo $TEAM
+    contains:
+    - inner
+    prompt: 'guest@build-node-03:/tmp$ '
+  - command: exit
+    contains: []
+  - command: pwd
+    contains:
+    - /home/guest
+  - command: echo $TEAM
+    contains:
+    - outer
+  - command: cat /tmp/nested
+    contains:
+    - shared
+  - command: false || echo recovered
+    contains:
+    - recovered
+  - command: true && echo ready
+    contains:
+    - ready
+  - command: rm /tmp/nested
+    contains: []
+  - command: history
+    contains:
+    - export TEAM=outer
+- id: macos-device-exploration
+  profile: macos-device
+  prompt: 'guest@studio-mac-01:~$ '
+  steps:
+  - command: uname -s
+    contains:
+    - Darwin
+  - command: hostname
+    contains:
+    - studio-mac-01
+  - command: whoami
+    contains:
+    - guest
+  - command: id -u
+    contains:
+    - '1000'
+  - command: pwd
+    contains:
+    - /Users/guest
+  - command: ls
+    contains:
+    - README.txt
+  - command: cat README.txt
+    contains:
+    - Device workspace
+  - command: uname -r
+    contains:
+    - 23.0.0
+  - command: uname -m
+    contains:
+    - arm64
+  - command: cat notes.txt
+    contains:
+    - alpha
+    - gamma
+  - command: head -n 1 notes.txt
+    contains:
+    - alpha
+  - command: tail -n 1 notes.txt
+    contains:
+    - gamma
+  - command: cat notes.txt | grep beta
+    contains:
+    - beta
+  - command: cat notes.txt | wc -l
+    contains:
+    - '3'
+  - command: which cat
+    contains:
+    - /usr/bin/cat
+  - command: env
+    contains:
+    - HOME=/Users/guest
+  - command: ps
+    contains:
+    - worker
+  - command: cat missing
+    contains:
+    - No such file
+  - command: 'false'
+    contains: []
+  - command: echo $?
+    contains:
+    - '1'
+  - command: help
+    contains:
+    - Virtual commands
+- id: macos-device-private
+  profile: macos-device
+  prompt: 'guest@studio-mac-01:~$ '
+  steps:
+  - command: echo private > /tmp/journey
+    contains: []
+  - command: cat /tmp/journey
+    contains:
+    - private
+  - command: wc -c /tmp/journey
+    contains:
+    - '8'
+  - command: cp /tmp/journey /tmp/copy
+    contains: []
+  - command: cat /tmp/copy
+    contains:
+    - private
+  - command: echo extra >> /tmp/copy
+    contains: []
+  - command: tail -n 1 /tmp/copy
+    contains:
+    - extra
+  - command: mv /tmp/copy /tmp/moved
+    contains: []
+  - command: cat /tmp/copy
+    contains:
+    - No such file
+  - command: cat /tmp/moved
+    contains:
+    - private
+    - extra
+  - command: chmod 000 /tmp/moved
+    contains: []
+  - command: cat /tmp/moved
+    contains:
+    - Permission denied
+  - command: chmod 644 /tmp/moved
+    contains: []
+  - command: stat /tmp/moved
+    contains:
+    - 'Mode: 644'
+  - command: rm /tmp/moved
+    contains: []
+  - command: cat /tmp/moved
+    contains:
+    - No such file
+  - command: hostname private-device
+    contains: []
+    prompt: 'guest@private-device:~$ '
+  - command: hostname
+    contains:
+    - private-device
+    prompt: 'guest@private-device:~$ '
+  - command: cat /etc/hostname
+    contains:
+    - private-device
+    prompt: 'guest@private-device:~$ '
+  - command: hostname studio-mac-01
+    contains: []
+  - command: hostname
+    contains:
+    - studio-mac-01
+  - command: rm /tmp/journey
+    contains: []
+- id: macos-device-nested
+  profile: macos-device
+  prompt: 'guest@studio-mac-01:~$ '
+  steps:
+  - command: export TEAM=outer
+    contains: []
+  - command: echo $TEAM
+    contains:
+    - outer
+  - command: bash
+    contains: []
+  - command: export TEAM=inner
+    contains: []
+  - command: echo $TEAM
+    contains:
+    - inner
+  - command: cd /tmp
+    contains: []
+    prompt: 'guest@studio-mac-01:/tmp$ '
+  - command: pwd
+    contains:
+    - /tmp
+    prompt: 'guest@studio-mac-01:/tmp$ '
+  - command: echo shared > /tmp/nested
+    contains: []
+    prompt: 'guest@studio-mac-01:/tmp$ '
+  - command: sh
+    contains: []
+    prompt: 'guest@studio-mac-01:/tmp$ '
+  - command: export TEAM=deep
+    contains: []
+    prompt: 'guest@studio-mac-01:/tmp$ '
+  - command: echo $TEAM
+    contains:
+    - deep
+    prompt: 'guest@studio-mac-01:/tmp$ '
+  - command: exit
+    contains: []
+    prompt: 'guest@studio-mac-01:/tmp$ '
+  - command: echo $TEAM
+    contains:
+    - inner
+    prompt: 'guest@studio-mac-01:/tmp$ '
+  - command: exit
+    contains: []
+  - command: pwd
+    contains:
+    - /Users/guest
+  - command: echo $TEAM
+    contains:
+    - outer
+  - command: cat /tmp/nested
+    contains:
+    - shared
+  - command: false || echo recovered
+    contains:
+    - recovered
+  - command: true && echo ready
+    contains:
+    - ready
+  - command: rm /tmp/nested
+    contains: []
+  - command: history
+    contains:
+    - export TEAM=outer
+- id: freebsd-device-exploration
+  profile: freebsd-device
+  prompt: 'guest@storage-bsd-01:~$ '
+  steps:
+  - command: uname -s
+    contains:
+    - FreeBSD
+  - command: hostname
+    contains:
+    - storage-bsd-01
+  - command: whoami
+    contains:
+    - guest
+  - command: id -u
+    contains:
+    - '1000'
+  - command: pwd
+    contains:
+    - /home/guest
+  - command: ls
+    contains:
+    - README.txt
+  - command: cat README.txt
+    contains:
+    - Device workspace
+  - command: uname -r
+    contains:
+    - '14.0'
+  - command: uname -m
+    contains:
+    - amd64
+  - command: cat notes.txt
+    contains:
+    - alpha
+    - gamma
+  - command: head -n 1 notes.txt
+    contains:
+    - alpha
+  - command: tail -n 1 notes.txt
+    contains:
+    - gamma
+  - command: cat notes.txt | grep beta
+    contains:
+    - beta
+  - command: cat notes.txt | wc -l
+    contains:
+    - '3'
+  - command: which cat
+    contains:
+    - /usr/bin/cat
+  - command: env
+    contains:
+    - HOME=/home/guest
+  - command: ps
+    contains:
+    - worker
+  - command: cat missing
+    contains:
+    - No such file
+  - command: 'false'
+    contains: []
+  - command: echo $?
+    contains:
+    - '1'
+  - command: help
+    contains:
+    - Virtual commands
+- id: freebsd-device-private
+  profile: freebsd-device
+  prompt: 'guest@storage-bsd-01:~$ '
+  steps:
+  - command: echo private > /tmp/journey
+    contains: []
+  - command: cat /tmp/journey
+    contains:
+    - private
+  - command: wc -c /tmp/journey
+    contains:
+    - '8'
+  - command: cp /tmp/journey /tmp/copy
+    contains: []
+  - command: cat /tmp/copy
+    contains:
+    - private
+  - command: echo extra >> /tmp/copy
+    contains: []
+  - command: tail -n 1 /tmp/copy
+    contains:
+    - extra
+  - command: mv /tmp/copy /tmp/moved
+    contains: []
+  - command: cat /tmp/copy
+    contains:
+    - No such file
+  - command: cat /tmp/moved
+    contains:
+    - private
+    - extra
+  - command: chmod 000 /tmp/moved
+    contains: []
+  - command: cat /tmp/moved
+    contains:
+    - Permission denied
+  - command: chmod 644 /tmp/moved
+    contains: []
+  - command: stat /tmp/moved
+    contains:
+    - 'Mode: 644'
+  - command: rm /tmp/moved
+    contains: []
+  - command: cat /tmp/moved
+    contains:
+    - No such file
+  - command: hostname private-device
+    contains: []
+    prompt: 'guest@private-device:~$ '
+  - command: hostname
+    contains:
+    - private-device
+    prompt: 'guest@private-device:~$ '
+  - command: cat /etc/hostname
+    contains:
+    - private-device
+    prompt: 'guest@private-device:~$ '
+  - command: hostname storage-bsd-01
+    contains: []
+  - command: hostname
+    contains:
+    - storage-bsd-01
+  - command: rm /tmp/journey
+    contains: []
+- id: freebsd-device-nested
+  profile: freebsd-device
+  prompt: 'guest@storage-bsd-01:~$ '
+  steps:
+  - command: export TEAM=outer
+    contains: []
+  - command: echo $TEAM
+    contains:
+    - outer
+  - command: bash
+    contains: []
+  - command: export TEAM=inner
+    contains: []
+  - command: echo $TEAM
+    contains:
+    - inner
+  - command: cd /tmp
+    contains: []
+    prompt: 'guest@storage-bsd-01:/tmp$ '
+  - command: pwd
+    contains:
+    - /tmp
+    prompt: 'guest@storage-bsd-01:/tmp$ '
+  - command: echo shared > /tmp/nested
+    contains: []
+    prompt: 'guest@storage-bsd-01:/tmp$ '
+  - command: sh
+    contains: []
+    prompt: 'guest@storage-bsd-01:/tmp$ '
+  - command: export TEAM=deep
+    contains: []
+    prompt: 'guest@storage-bsd-01:/tmp$ '
+  - command: echo $TEAM
+    contains:
+    - deep
+    prompt: 'guest@storage-bsd-01:/tmp$ '
+  - command: exit
+    contains: []
+    prompt: 'guest@storage-bsd-01:/tmp$ '
+  - command: echo $TEAM
+    contains:
+    - inner
+    prompt: 'guest@storage-bsd-01:/tmp$ '
+  - command: exit
+    contains: []
+  - command: pwd
+    contains:
+    - /home/guest
+  - command: echo $TEAM
+    contains:
+    - outer
+  - command: cat /tmp/nested
+    contains:
+    - shared
+  - command: false || echo recovered
+    contains:
+    - recovered
+  - command: true && echo ready
+    contains:
+    - ready
+  - command: rm /tmp/nested
+    contains: []
+  - command: history
+    contains:
+    - export TEAM=outer
+- id: ios-device-exploration
+  profile: ios-device
+  prompt: 'edge-router-01> '
+  steps:
+  - command: show version
+    contains:
+    - IOS XE
+    prompt: 'edge-router-01> '
+  - command: show interfaces
+    contains:
+    - is up
+    prompt: 'edge-router-01> '
+  - command: nonsense
+    contains:
+    - Invalid input
+    prompt: 'edge-router-01> '
+  - command: show
+    contains:
+    - Incomplete
+    prompt: 'edge-router-01> '
+  - command: en
+    contains: []
+    prompt: 'Password: '
+  - command: bad
+    contains:
+    - Access denied
+    prompt: 'edge-router-01> '
+  - command: enable
+    contains: []
+    prompt: 'Password: '
+  - command: fixture-enable
+    contains: []
+    prompt: 'edge-router-01# '
+  - command: show running-config
+    contains:
+    - hostname
+    prompt: 'edge-router-01# '
+  - command: show startup-config
+    contains:
+    - hostname
+    prompt: 'edge-router-01# '
+  - command: conf t
+    contains: []
+    prompt: 'edge-router-01(config)# '
+  - command: interface GigabitEthernet0/0
+    contains: []
+    prompt: 'edge-router-01(config-if)# '
+  - command: description assessment-uplink
+    contains: []
+    prompt: 'edge-router-01(config-if)# '
+  - command: shutdown
+    contains: []
+    prompt: 'edge-router-01(config-if)# '
+  - command: end
+    contains: []
+    prompt: 'edge-router-01# '
+  - command: show interfaces
+    contains:
+    - administratively down
+    - assessment-uplink
+    prompt: 'edge-router-01# '
+  - command: configure terminal
+    contains: []
+    prompt: 'edge-router-01(config)# '
+  - command: interface GigabitEthernet0/0
+    contains: []
+    prompt: 'edge-router-01(config-if)# '
+  - command: no shutdown
+    contains: []
+    prompt: 'edge-router-01(config-if)# '
+  - command: end
+    contains: []
+    prompt: 'edge-router-01# '
+  - command: show interfaces
+    contains:
+    - is up
+    prompt: 'edge-router-01# '
+  - command: disable
+    contains: []
+    prompt: 'edge-router-01> '
+- id: ios-device-private
+  profile: ios-device
+  prompt: 'edge-router-01> '
+  steps:
+  - command: enable
+    contains: []
+    prompt: 'Password: '
+  - command: fixture-enable
+    contains: []
+    prompt: 'edge-router-01# '
+  - command: configure terminal
+    contains: []
+    prompt: 'edge-router-01(config)# '
+  - command: hostname private-edge
+    contains: []
+    prompt: 'private-edge(config)# '
+  - command: interface GigabitEthernet0/0
+    contains: []
+    prompt: 'private-edge(config-if)# '
+  - command: description private-uplink
+    contains: []
+    prompt: 'private-edge(config-if)# '
+  - command: shutdown
+    contains: []
+    prompt: 'private-edge(config-if)# '
+  - command: exit
+    contains: []
+    prompt: 'private-edge(config)# '
+  - command: end
+    contains: []
+    prompt: 'private-edge# '
+  - command: show version
+    contains:
+    - private-edge
+    prompt: 'private-edge# '
+  - command: show running-config
+    contains:
+    - private-uplink
+    - shutdown
+    prompt: 'private-edge# '
+  - command: copy running-config startup-config
+    contains: []
+    prompt: 'Destination filename [startup-config]? '
+  - command: ''
+    contains:
+    - '[OK]'
+    prompt: 'private-edge# '
+  - command: show startup-config
+    contains:
+    - private-uplink
+    prompt: 'private-edge# '
+  - command: configure terminal
+    contains: []
+    prompt: 'private-edge(config)# '
+  - command: hostname edge-router-01
+    contains: []
+    prompt: 'edge-router-01(config)# '
+  - command: interface GigabitEthernet0/0
+    contains: []
+    prompt: 'edge-router-01(config-if)# '
+  - command: no shutdown
+    contains: []
+    prompt: 'edge-router-01(config-if)# '
+  - command: end
+    contains: []
+    prompt: 'edge-router-01# '
+  - command: show interfaces
+    contains:
+    - is up
+    prompt: 'edge-router-01# '
+  - command: show startup-config
+    contains:
+    - private-edge
+    prompt: 'edge-router-01# '
+  - command: disable
+    contains: []
+    prompt: 'edge-router-01> '
+- id: ios-device-nested
+  profile: ios-device
+  prompt: 'edge-router-01> '
+  steps:
+  - command: show version
+    contains:
+    - IOS XE
+    prompt: 'edge-router-01> '
+  - command: enable
+    contains: []
+    prompt: 'Password: '
+  - command: fixture-enable
+    contains: []
+    prompt: 'edge-router-01# '
+  - command: conf t
+    contains: []
+    prompt: 'edge-router-01(config)# '
+  - command: interface GigabitEthernet0/0
+    contains: []
+    prompt: 'edge-router-01(config-if)# '
+  - command: description nested-uplink
+    contains: []
+    prompt: 'edge-router-01(config-if)# '
+  - command: exit
+    contains: []
+    prompt: 'edge-router-01(config)# '
+  - command: interface GigabitEthernet0/0
+    contains: []
+    prompt: 'edge-router-01(config-if)# '
+  - command: shutdown
+    contains: []
+    prompt: 'edge-router-01(config-if)# '
+  - command: end
+    contains: []
+    prompt: 'edge-router-01# '
+  - command: show interfaces
+    contains:
+    - nested-uplink
+    - administratively down
+    prompt: 'edge-router-01# '
+  - command: conf t
+    contains: []
+    prompt: 'edge-router-01(config)# '
+  - command: interface GigabitEthernet0/0
+    contains: []
+    prompt: 'edge-router-01(config-if)# '
+  - command: no shutdown
+    contains: []
+    prompt: 'edge-router-01(config-if)# '
+  - command: exit
+    contains: []
+    prompt: 'edge-router-01(config)# '
+  - command: end
+    contains: []
+    prompt: 'edge-router-01# '
+  - command: terminal length 0
+    contains: []
+    prompt: 'edge-router-01# '
+  - command: show interfaces
+    contains:
+    - is up
+    prompt: 'edge-router-01# '
+  - command: disable
+    contains: []
+    prompt: 'edge-router-01> '
+  - command: show version
+    contains:
+    - IOS XE
+    prompt: 'edge-router-01> '
+  - command: nonsense
+    contains:
+    - Invalid input
+    prompt: 'edge-router-01> '

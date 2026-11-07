@@ -1,3 +1,4 @@
+import asyncio
 import asyncssh
 import pytest
 
@@ -87,6 +88,7 @@ async def test_private_touch_write_read_list_remove_and_cwd(runtime_factory, tmp
         await a.run('exit', 2)
         await b.run('exit', 2)
     assert not runtime.test_provider.calls
+    await asyncio.sleep(.05)  # Connection summary follows channel shutdown.
     assert not runtime.sessions
 
 

@@ -34,39 +34,55 @@ class ShellOutput:
 
 
 class ShellClient:
-    """Read server-owned prompts without trimming command output or decoding bytes."""
+    """Public-wire interactive client with configurable device prompt recognition."""
 
-    def __init__(self, process, banner: bytes):
+    DEFAULT_PROMPT = rb'(?:[^\r\n]{1,128}@[A-Za-z0-9][A-Za-z0-9.-]{0,62}:[^\r\n]{0,4096}[$#] |(?:PS )?[A-Za-z]:\\[^\r\n]{0,4096}> |[A-Za-z0-9][A-Za-z0-9.-]{0,62}(?:\(config(?:-if)?\))?[>#] )'
+
+    def __init__(self, process, banner: bytes, pattern=None):
         self.process = process
         self.banner = banner
-        prompt = banner.rsplit(b"\n", 1)[-1]
-        if re.fullmatch(rb'(?:PS )?[A-Za-z]:\\[^\r\n]{0,4096}> ', prompt):
-            self.prefix = b'PS ' if prompt.startswith(b'PS ') else prompt[:3]
-            self.pattern = re.compile(rb'(?:PS )?[A-Za-z]:\\[^\r\n]{0,4096}> ')
-            return
-        self.prefix = prompt.split(b":", 1)[0] + b":"
-        hostname = self.prefix.rsplit(b"@", 1)[-1].removesuffix(b":")
-        self.pattern = re.compile(rb"[^\r\n]{1,128}@" + re.escape(hostname) +
-                                  rb":[^\r\n]{0,4096}[$#] ")
+        self.pattern = pattern or re.compile(self.DEFAULT_PROMPT)
+        self.user_prefix = banner.rsplit(b'\n', 1)[-1].split(b'@', 1)[0] + b'@' if b'@' in banner.rsplit(b'\n', 1)[-1] else None
 
     @classmethod
-    async def open(cls, connection: asyncssh.SSHClientConnection, timeout: float) -> ShellClient:
+    async def open(cls, connection: asyncssh.SSHClientConnection, timeout: float,
+                   prompt_pattern: bytes | None = None,
+                   continuation_prompts: tuple[bytes, ...] = ()) -> ShellClient:
         process = await connection.create_process(term_type="xterm")
-        pattern = re.compile(rb"(?:[^\r\n]{1,128}@[A-Za-z0-9][A-Za-z0-9.-]{0,62}:[^\r\n]{0,4096}[$#] |(?:PS )?[A-Za-z]:\\[^\r\n]{0,4096}> )")
+        pattern = re.compile(prompt_pattern or cls.DEFAULT_PROMPT)
         banner = await asyncio.wait_for(process.stdout.readuntil(pattern), timeout)
-        return cls(process, banner)
+        if continuation_prompts:
+            pattern = re.compile(b'(?:' + pattern.pattern + b'|' +
+                                 b'|'.join(re.escape(p) for p in continuation_prompts) + b')')
+        return cls(process, banner, pattern)
 
     async def run(self, command: str, timeout: float) -> ShellOutput:
         self.process.stdin.write(command.encode() + b"\n")
         try:
             raw = await asyncio.wait_for(self.process.stdout.readuntil(self.pattern), timeout)
-            start = raw.rfind(b"\n") + 1
-            known = raw.rfind(self.prefix)
-            if known >= start:
-                start = known
-            body, prompt = raw[:start], raw[start:]
-            self.prefix = prompt.split(b":", 1)[0] + b":"
-            return ShellOutput(body, raw, prompt, None)
+            # A command can print prompt-like bytes. Observe a short quiet interval and
+            # select the final prompt; this is wire inference, never a server marker.
+            async with asyncio.timeout(timeout):
+                while True:
+                    try:
+                        more = await asyncio.wait_for(self.process.stdout.read(4096), .02)
+                    except TimeoutError:
+                        break
+                    if not more:
+                        break
+                    raw += more
+                    if len(raw) > 1048576:
+                        raise ValueError('SSH observation exceeds 1 MiB')
+            matches = list(self.pattern.finditer(raw))
+            if not matches:
+                raise ValueError('Missing device prompt')
+            match = matches[-1]
+            start = match.start()
+            if self.user_prefix:
+                known = raw.rfind(self.user_prefix)
+                if known >= start:
+                    start = known
+            return ShellOutput(raw[:start], raw, raw[start:], None)
         except asyncio.IncompleteReadError as exc:
             await asyncio.wait_for(self.process.wait_closed(), timeout)
             stderr = await self.process.stderr.read()

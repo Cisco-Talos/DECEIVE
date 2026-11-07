@@ -30,6 +30,8 @@ Run on macOS/Linux (including WSL) from a Git checkout with Docker 28+ available
 Default native-agent limits are four concurrent probe actions, 30 actions per
 role/target and ten minutes from that role's first probe of the target. Existing
 sessions are scoped to role/target/service; do not share runtime data directories.
+SSH probe-plan preflight accepts raw `terminal` actions as well as command and
+authentication actions, including input selectors for full-screen lifecycle journeys.
 
 ```sh
 uv run deceive assess prepare --spec examples/assessment-quality.yaml --results-dir results/assessment
@@ -122,6 +124,23 @@ SSH supports `exec`/`commands` with `command` or `commands`, and optional userna
 password and interactive flag. A multi-command or named-session action uses an
 interactive channel. Responses preserve raw/banner/prompt bytes separately from
 command output. Commands only reach the honeypot simulation, not a host shell.
+For declared question/answer workflows, set `continuation_prompts` on the first
+action of a named shell, for example `["Password: "]`. These are at most 16 literal
+strings, each at most 256 UTF-8 bytes; they extend command-response boundaries
+after the initial login prompt. No universal device question grammar is assumed.
+Raw terminal `wait` values are literal strings, not sleep durations. A wait-only
+event can match bytes drained earlier in the same observation, including fragmented
+matches; it does not replay bytes from a previous observation. Send/resize events
+start a new response boundary. Use `events: []` to capture currently available data.
+Terminal event shapes and bounds (20–240 columns, 5–100 rows) are validated before
+opening or reading a channel. SSH probes send a unique standard client identification
+string and capture it as `facts.client_version`; server telemetry records the actual
+wire value as `ssh_client_version`. Ordered terminal input/output audits use that
+connection identity across Docker source-port translation, including context help,
+empty observations and exact PTY bytes. Replayed captures remain invalid.
+The client-side emulator supplements pyte with xterm 1049 alternate-buffer handling;
+screen/cursor observations restore the primary buffer on exit and resize both buffers.
+Earlier run captures retain the emulator and limits used at their recorded candidate.
 
 HTTP supports `request` with method, target-relative path, version, header pairs
 and body/body_base64. Redirects are not followed. Real negotiation is mandatory.

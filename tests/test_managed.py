@@ -12,6 +12,7 @@ from deceive.models import Deployment, Listener, ProviderConfig
 class FakeDocker:
     def __init__(self):
         self.calls = []
+        self.environments = []
         self.resources = {}
         self.fail_health = False
 
@@ -30,6 +31,7 @@ class FakeDocker:
 
     def call(self, *args, **kwargs):
         self.calls.append(args)
+        self.environments.append(kwargs.get('env'))
         if args[:2] == ("image", "inspect"):
             return "sha256:fixture"
         if args[0] in {"volume", "network"}:
@@ -191,6 +193,42 @@ async def test_provider_secrets_are_mounted_and_forwarded_by_name_only(tmp_path,
 
 
 @pytest.mark.asyncio
+async def test_dotenv_and_literal_secrets_reach_only_selected_container(tmp_path):
+    from deceive.credentials import literal_name
+    from deceive.config import load_deployment
+
+    (tmp_path / '.env').write_text('SELECTED=selected-secret\nUNUSED=unused-secret\nUNRELATED=other-secret\n')
+    path = tmp_path / 'deployment.yaml'
+    path.write_text(yaml.safe_dump({'env_file': '.env', 'providers': {
+        'selected': {'kind': 'openai', 'model': 'model', 'api_key_env': 'SELECTED'},
+        'literal': {'kind': 'openai', 'model': 'model', 'api_key': 'literal-secret'},
+        'unused': {'kind': 'openai', 'model': 'model', 'api_key_env': 'UNUSED'}},
+        'listeners': [{'name': name, 'protocol': 'ssh', 'profile': 'linux-ssh',
+                       'port': 18022 + index, 'provider': name}
+                      for index, name in enumerate(['selected', 'literal'])]}))
+    docker = FakeDocker()
+    manager = DeploymentManager(tmp_path / 'state', docker)
+    await manager.start('host', load_deployment(path))
+    command = next(call for call in docker.calls if call[0] == 'create')
+    forwarded = {command[index + 1] for index, word in enumerate(command) if word == '--env'}
+    assert forwarded == {'SELECTED', literal_name('literal')}
+    environment = next(value for value in docker.environments if value is not None)
+    assert environment['SELECTED'] == 'selected-secret'
+    assert environment[literal_name('literal')] == 'literal-secret'
+    assert 'UNUSED' not in environment and 'UNRELATED' not in environment
+    snapshot = next(manager.directory('host').glob('snapshot-*/deployment.json'))
+    data = json.loads(snapshot.read_text())
+    assert set(data['providers']) == {'selected', 'literal'}
+    assert data['providers']['selected']['env_file'] is None
+    assert data['providers']['literal']['api_key_env'] == literal_name('literal')
+    evidence = str(command) + ''.join(p.read_text() for p in manager.root.rglob('*.json'))
+    assert all(value not in evidence for value in ('selected-secret', 'literal-secret', 'unused-secret'))
+    assert '.env,' not in str(command)
+    manager.stop('host')
+    manager.remove('host', remove_data=True)
+
+
+@pytest.mark.asyncio
 async def test_named_aws_settings_and_secret_mounts_preserve_configuration(tmp_path):
     docker = FakeDocker()
     manager = DeploymentManager(tmp_path / "state", docker)
@@ -227,3 +265,38 @@ async def test_https3_mapping_and_advertisement_are_explicit(tmp_path):
     assert json.loads(snapshot.read_text())["listeners"][0]["advertised_port"] == 19443
     manager.stop("portal")
     manager.remove("portal", remove_data=True)
+
+
+@pytest.mark.asyncio
+async def test_start_defaults_to_in_container_preflight_and_skip_is_explicit(tmp_path):
+    docker = FakeDocker()
+    manager = DeploymentManager(tmp_path / 'state', docker)
+    await manager.start('checked', config())
+    command = next(call for call in docker.calls if call[0] == 'create')
+    assert '--preflight' in command
+    assert sum(call[0] == 'start' for call in docker.calls) == 1
+    await manager.start('checked', None)
+    assert sum(call[0] == 'start' for call in docker.calls) == 1
+    manager.stop('checked')
+    await manager.start('checked', None)
+    assert sum(call[0] == 'start' for call in docker.calls) == 2
+    await manager.start('unchecked', config(), skip_preflight=True)
+    command = [call for call in docker.calls if call[0] == 'create'][-1]
+    assert '--preflight' not in command
+
+
+@pytest.mark.asyncio
+async def test_retained_preflight_policy_cannot_silently_change(tmp_path):
+    docker = FakeDocker()
+    manager = DeploymentManager(tmp_path / 'state', docker)
+    await manager.start('checked', config())
+    manager.stop('checked')
+    with pytest.raises(ValueError, match='retains its preflight policy'):
+        await manager.start('checked', None, skip_preflight=True)
+    record = manager.record('checked')
+    record['options'].pop('skip_preflight')
+    from deceive.managed import write_json
+    write_json(manager.directory('checked') / 'record.json', record)
+    with pytest.raises(ValueError, match='predates startup preflight'):
+        await manager.start('checked', None)
+    assert sum(call[0] == 'start' for call in docker.calls) == 1

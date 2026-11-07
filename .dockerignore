@@ -17,6 +17,8 @@
 !examples/*.yaml
 !examples/profiles/
 !examples/profiles/*.yaml
+examples/*.local.yaml
+examples/profiles/*.local.yaml
 skills/**/.*
 skills/**/__pycache__/
 skills/**/*.pyc
@@ -28,3 +30,6 @@ deceive/**/*.pyc
 deceive/**/*.key
 deceive/**/*.pem
 deceive/**/*-ssh-key
+**/*.local.yaml
+**/.env
+**/.env.*

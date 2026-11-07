@@ -1,0 +1,31 @@
+# Copy to testing.local.yaml in the repository root. That filename is ignored.
+# This is ordinary deployment configuration consumed by online checks.
+# No tests discover this file automatically. Offline pytest never uses credentials.
+# To share local credentials/settings instead, replace providers below with:
+# provider_config: providers.local.yaml
+# Then omit listener.provider to inherit the catalog default, or select its alias.
+schema_version: 2
+data_dir: .deceive/testing
+providers:
+  evaluation:
+    kind: openai
+    model: YOUR_MODEL
+    api_key_env: DECEIVE_TEST_API_KEY
+    temperature: null
+# For Bedrock, replace the provider above; no private profile names are shipped:
+#   evaluation:
+#     kind: bedrock
+#     model: YOUR_MODEL_OR_INFERENCE_PROFILE_ID
+#     region: YOUR_REGION
+#     aws_profile: YOUR_LOCAL_AWS_PROFILE  # optional; omit to use the credential chain
+listeners:
+  - name: target
+    protocol: ssh
+    profile: linux-device # public fixture; replace with your selected profile
+    host: 127.0.0.1
+    port: 0
+    provider: evaluation
+limits:
+  llm_seconds: 25
+  request_seconds: 30
+  total_seconds: 1800

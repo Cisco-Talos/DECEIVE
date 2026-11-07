@@ -1,0 +1,75 @@
+{
+  "schema_version": 2,
+  "id": "macos-device",
+  "version": "1",
+  "protocol": "ssh",
+  "description": "Bounded whole-device macOS 14.0 session with private virtual state.",
+  "requirements": {
+    "protocol": "ssh",
+    "preferred_port": 8022,
+    "capabilities": [
+      "ssh.commands",
+      "ssh.device",
+      "ssh.fullscreen"
+    ]
+  },
+  "device": {
+    "platform": "macos",
+    "interpreter": "zsh",
+    "model_effects": true,
+    "applications": [
+      "less",
+      "top",
+      "vi",
+      "device-menu"
+    ]
+  },
+  "identity": {
+    "hostname": "studio-mac-01",
+    "os": "macOS 14.0",
+    "kernel": "23.0.0",
+    "architecture": "arm64",
+    "username": "guest",
+    "uid": 1000,
+    "ssh_version": "OpenSSH_9.3",
+    "banner": "macOS 14.0\nAuthorized access only."
+  },
+  "files": {
+    "/etc/hostname": "studio-mac-01\n",
+    "/Users/guest/README.txt": "Device workspace\nUse help to discover commands.\n",
+    "/Users/guest/notes.txt": "alpha\nbeta\ngamma\n",
+    "/etc/passwd": "guest:x:1000:1000:Guest:/Users/guest:/bin/zsh\n"
+  },
+  "behaviors": [
+    {
+      "id": "files",
+      "kind": "virtual_files",
+      "options": {
+        "directories": [
+          "/tmp",
+          "/var/tmp",
+          "/Users/guest"
+        ]
+      }
+    },
+    {
+      "id": "identity",
+      "kind": "identity"
+    }
+  ],
+  "fallback": "llm_if_available",
+  "fallback_reply": {
+    "stderr": "zsh: command not found\n",
+    "exit_status": 127
+  },
+  "ssh_response_format": "json",
+  "prompt": "Simulate only the selected platform and current interaction. Authoritative device facts and private state take precedence. Propose virtual effects explicitly; never invent lasting effects absent from state.",
+  "references": [
+    "https://support.apple.com/guide/terminal/change-the-default-shell-trml113/mac"
+  ],
+  "limitations": [
+    "Bounded interpreter and application subsets; no real programs execute.",
+    "Reference contents and naming are fictional design fixtures.",
+    "Real-model realism requires credentialed online assessment; offline tests do not qualify it."
+  ]
+}

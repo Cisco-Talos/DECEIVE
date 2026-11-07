@@ -20,6 +20,9 @@ ollama = ["ollama>=0.6,<1"]
 bedrock = ["boto3>=1.42,<2"]
 gemini = ["google-genai>=1,<3"]
 all-providers = ["deceive[openai,ollama,bedrock,gemini]"]
+assessment = [
+    "pyte>=0.8,<0.9",
+]
 
 [project.scripts]
 deceive = "deceive.cli:main"
@@ -35,6 +38,7 @@ packages = ["deceive"]
 
 [dependency-groups]
 dev = [
+    "pyte>=0.8,<0.9",
     "pytest",
     "pytest-asyncio",
 ]

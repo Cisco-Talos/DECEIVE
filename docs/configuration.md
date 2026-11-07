@@ -15,15 +15,42 @@ The YAML can contain only operational settings when all deceptions are supplied
 on the CLI; validation applies to the combined configuration.
 Listener/provider overrides cannot be combined with `--config`; `--data-dir` can.
 
-`deceive config validate` accepts the same selection flags as `serve`. It validates
-the resolved runtime configuration, prints listeners/base profiles/deceptions,
-and exits 0 for success or 2 for configuration errors. It opens no sockets,
-creates no data/log/key files, initializes no provider clients, and calls no
-models. Explicitly enabled trusted extension factories/validators are loaded.
-Port availability, provider connectivity/credentials, and TLS/key parsing remain
-startup checks. `serve` independently reloads the files and performs the same
-compatibility validation before any listener binds; a prior validation result is
-never used as permission to skip checking.
+`deceive config validate` accepts the same selection flags as `serve`. By default,
+it validates the resolved runtime configuration and makes one bounded synthetic
+request per distinct selected provider configuration. This verifies credential loading,
+model access and acceptance of the configured inference parameters through the real
+adapter. It does not open listeners or create runtime data/log/key files. Network
+connections and billable model calls are expected when providers are selected.
+
+Use `deceive config validate --offline` for CI, editing and credential-free checks.
+This performs static compatibility checks without initializing provider SDKs or
+making provider requests, including requests to a local Ollama server. It does not
+require credential variables or secret files to exist. Enabled trusted extension
+factories/validators are still loaded. Unused providers never receive live checks.
+
+JSON and text output distinguish `offline-valid`, `live-verified`, `not-required`
+(no selected providers), and `failed`. Provider checks report aliases, kind, configured
+model, elapsed time and numeric token usage; errors identify the initialization or
+request stage without SDK exception text, secrets, or response content. Known settings
+are statically validated; live success establishes that the tested request worked,
+not that a remote backend honored every setting or that deception realism is qualified.
+The request uses the configured model, temperature and token limits; inference time is
+bounded by the smaller request/provider deadline and concurrency by `llm_concurrency`.
+
+Exit status is 0 for success and 2 for validation/preflight failure. Invalid static
+configuration is rejected before any SDK initialization. Port availability and TLS/key
+parsing remain startup checks. No validation result is cached to bypass later checks.
+
+Managed `deceive deployment start` enables `serve --preflight` inside the actual
+container before any protocol listener opens. Every real restart repeats the check
+using that container's retained image, environment, mounts and network. Starting an
+already-ready container is idempotent and makes no additional model calls. For a new
+managed deployment, `--skip-preflight` explicitly disables live checking; static
+validation still runs. This policy is retained with the container; changing it requires
+replacing the stopped container. Older retained containers without a recorded
+preflight policy must also be replaced before restart. Increase deployment `--timeout` to accommodate slow
+models or multiple waves of checks. Native `serve --preflight` provides the same
+optional startup gate; plain `serve` retains its existing behavior.
 
 ## Automatic selection and composition
 
@@ -161,14 +188,20 @@ unless a listener selects one.
 - Bedrock: optional `region`, `aws_profile`, and `endpoint`; use the AWS standard
   credential chain, including mounted `AWS_SHARED_CREDENTIALS_FILE` or workload
   credentials. `api_key_env`/`api_key_file` are not AWS credential configuration.
-  Select an appropriate model or inference-profile ID through `model`. Blank
-  conversation turns are represented as metadata only in the outgoing Converse
+  Select an appropriate model or inference-profile ID through `model`.
+  An explicit `aws_profile` selects the SDK's named-profile credential chain;
+  its saved keys can differ from access keys in another application's environment.
+  Compare credential sources before assuming a failed named-profile request means
+  every locally configured AWS credential is invalid.
+  Blank conversation turns are represented as metadata only in the outgoing Converse
   request, because Bedrock rejects empty text blocks; stored transcripts and
   logged output retain their original content.
 
 For non-AWS providers, `api_key_env` selects a named environment variable and
 `api_key_file` selects a mounted UTF-8 secret file. Secret-file content takes
-precedence. Do not put literal API keys in profiles or committed YAML.
+precedence over an environment reference. A literal `api_key` is also accepted in
+private YAML, exclusively of the other references, and is excluded from configuration
+dumps. Do not put literal API keys in profiles or committed YAML.
 
 Common controls: `temperature` (default 0.2; `null` omits it),
 `max_output_tokens` (2048), `context_tokens` (16384), and `tls_verify` (true).
@@ -183,6 +216,67 @@ explicitly. Provider-specific context sizes must be configured accurately.
 
 `analyze: true` enables LLM summaries and requires a provider. Without analysis,
 or when analysis fails, the session still gets one summary with `UNKNOWN`.
+
+### Shared provider settings and secrets
+
+Copy [`examples/providers.yaml`](../examples/providers.yaml) to ignored
+`providers.local.yaml` beside your deployment. Add this to each deployment or
+assessment specification:
+
+```yaml
+provider_config: providers.local.yaml
+```
+
+The catalog contains `schema_version: 1`, `providers`, optional `default_provider`,
+and optional `env_file: .env`. Inline deployment `providers` may replace individual
+catalog aliases; each replacement is a complete definition. A deployment-level
+`default_provider` overrides the catalog default. The default fills only omitted
+listener providers and `deception_defaults.provider`; explicit aliases override it
+and explicit `null` disables it. Set `default_provider: null` to keep an existing
+model-free deployment model-free. A composed listener uses one provider; use separate
+listeners/deployments for different model selections. Direct-profile assessment
+targets inherit the catalog default, while targets naming deployment files use
+those files' settings.
+When selecting profiles directly on the CLI, use `--provider-config FILE` with
+`serve`, `config validate` or `deployment start`. It applies the same global
+default without a separate deployment YAML. The catalog is explicit; simply
+placing `providers.local.yaml` in a directory does not activate a provider.
+
+In the catalog, `api_key: ${env:DECEIVE_API_KEY}` is a named credential reference,
+equivalent to `api_key_env: DECEIVE_API_KEY`. Put `DECEIVE_API_KEY=...` in `.env`.
+Other string provider settings, such as `model` or `region`, may use
+`${env:NAME}` too; these are resolved after YAML parsing, so values cannot inject
+YAML structure. Interpolation is confined to provider settings, never profile or
+attacker content. Credential references stay unresolved during offline validation;
+missing non-secret setting variables fail validation immediately.
+
+Environment files support comments, single/double quoted single-line values and
+optional `export`. Quote values containing whitespace or `#`. Shell commands,
+variable expansion and multiline values are not evaluated. Duplicates and malformed
+lines fail with line numbers without exposing values. Process environment wins over
+the selected file. A provider's own `env_file` overrides a deployment-level
+`env_file`, which overrides the catalog's file. Relative paths resolve against the
+YAML that declares them. A missing environment file is allowed when the process
+environment or AWS credential chain supplies credentials. Files are never loaded
+into the host process environment.
+
+`deceive config validate --config deployment.local.yaml` checks selected models live
+by default; `--offline` checks structure and compatibility without credentials or
+SDK calls. `deceive deployment start NAME --config deployment.local.yaml` resolves
+the catalog on the host and injects only selected providers' credential names and
+values. Unrelated `.env` entries and unused providers are excluded. Neither the
+catalog nor `.env` is mounted. Literal keys become generated environment references
+in container snapshots. Direct-profile assessment literals are stored in separate
+mode-0600 secret files, outside source checkpoints and serialized configuration.
+
+For Bedrock, continue using `aws_profile` and the AWS chain, with
+`--aws-dir ~/.aws` for managed containers or `docker.aws_dir` in assessments.
+The explicitly mounted directory remains readable in that container; it is not a
+per-profile credential projection. A named profile does not also forward unrelated
+AWS access keys. Without a profile, standard AWS key/session/region variables may
+come from the selected `.env`, or a workload credential source may supply them.
+Updating local configuration does not replace an existing container or change its
+retained environment. Stop/remove and recreate it to apply changed credentials.
 
 ## Limits
 

@@ -20,11 +20,11 @@ deceive profile list --directory ./profiles --protocol https
 deceive profile show sudo-2019-14287 --json
 deceive profile show custom-id --directory ./profiles --json
 deceive profile validate ./profiles/custom.yaml --json
-deceive config validate --config deployment.yaml --deception demo-http --json
+deceive config validate --config deployment.yaml --deception demo-http --offline --json
 ```
 
 The catalog discovers packaged profiles and top-level `.yaml`/`.yml` files in
-each explicitly supplied directory (repeatable). It resolves bases and relative
+each explicitly supplied directory (repeatable). Catalog operations resolve bases and relative
 assets without starting listeners or contacting providers. Identical definitions
 are deduplicated; conflicting definitions of an ID fail. It does not register or
 copy local profiles globally. Author custom base dependencies as relative paths
@@ -39,6 +39,9 @@ that network ports or provider credentials will work at startup.
 
 Load or build the standard image first. Starts use only local image contents;
 there is no automatic pull, build or dependency installation.
+For CLI-only selection, `--provider-config providers.local.yaml` applies the
+catalog's global default without a deployment YAML. With `--config`, put
+`provider_config` in that YAML instead.
 
 ```sh
 deceive deployment start demo --profile demo-http --image deceive:local
@@ -56,6 +59,13 @@ a dedicated bridge network and one persistent data volume. It can contain many
 listeners/profiles. YAML and repeatable CLI `--deception` selections are additive
 exactly as with `serve`, and the full selection is validated before resources
 are created. The container repeats validation at startup.
+Selected providers also receive a bounded live preflight inside the container before
+listeners open. Failures block readiness and appear as sanitized `Provider preflight`
+telemetry. Each actual restart repeats preflight with retained credentials; an
+idempotent start of an already-ready container makes no extra requests.
+`--skip-preflight` selects an explicit bypass for a new container while retaining static
+checks. The choice is immutable with that container, like its environment and command.
+Default startup timeout is 30 seconds; increase `--timeout` for slower model checks.
 
 The manager records an immutable local image ID and materializes a snapshot of
 complete profiles, bases, embedded prompts and binary assets. The snapshot is
@@ -121,8 +131,12 @@ and continues to use `assess cleanup`.
 
 ## Providers and credentials
 
-Use existing named provider settings in deployment YAML: model, AWS region/profile,
-endpoint, token/context limits and temperature. Active providers' referenced
+Define named provider settings in deployment YAML, or reference a shared
+`provider_config: providers.local.yaml` catalog. Its `.env`
+is read on the host and only selected providers' referenced credentials are injected;
+the files themselves are not mounted. See [configuration](configuration.md#shared-provider-settings-and-secrets).
+Provider settings include model, AWS region/profile, endpoint, token/context limits
+and temperature. Active providers' referenced
 `api_key_env` variables are forwarded by name, as are present standard provider
 credential variables. `api_key_file` and explicit key/certificate paths are
 mounted read-only; their contents are never copied into snapshots or results.
@@ -206,3 +220,8 @@ before any changes; preserve your edits or use `--force` to replace those files.
 Manually installed older copies without a manifest may need `--force` on first
 adoption. Skills become visible through the agent's discovery mechanism; start a
 new session if they are not shown yet.
+
+Configuration validation defaults to live provider checks. Use
+`deceive config validate --offline` when checking structure and wiring without
+credentials, networking or billable requests. See the
+[validation policy](configuration.md) for verification labels and limitations.

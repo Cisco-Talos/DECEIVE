@@ -64,7 +64,8 @@ def identity(profile: Profile, spec: Behavior, interaction: Interaction,
     facts = profile.identity
     user = session.state.get("user", session.username)
     uid = session.state.get("uid", str(0 if user == "root" else facts.uid))
-    home = "/root" if session.username == "root" else f"/home/{session.username}"
+    from deceive.device.engine import home as device_home
+    home = device_home(profile, session)
     cwd = session.state.get("cwd", home)
     output = None
     transition = {}

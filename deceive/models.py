@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, SecretStr, model_validator
 
 
 class Model(BaseModel):
@@ -276,6 +276,24 @@ class Requirements(Model):
         return self
 
 
+class DevicePack(Model):
+    platform: Literal['linux', 'macos', 'freebsd', 'ios'] = 'linux'
+    interpreter: Literal['bash', 'zsh', 'sh', 'ios'] = 'bash'
+    home: str | None = None
+    applications: list[Literal['less', 'top', 'vi', 'device-menu']] = Field(
+        default_factory=lambda: ['less', 'top', 'vi', 'device-menu'])
+    model_effects: bool = False
+    enable_password: str = 'fixture-enable'
+
+    @model_validator(mode='after')
+    def valid_device(self) -> DevicePack:
+        if (self.platform == 'ios') != (self.interpreter == 'ios'):
+            raise ValueError('IOS devices require the IOS interpreter')
+        if self.home and (not self.home.startswith('/') or '\x00' in self.home):
+            raise ValueError('Device home must be a virtual absolute path')
+        return self
+
+
 class Profile(Model):
     _bound_base: Any = PrivateAttr(default=None)
     schema_version: Literal[1, 2] = 1
@@ -301,6 +319,7 @@ class Profile(Model):
     contracts: list[Contract] = Field(default_factory=list)
     command_environment: CommandEnvironment | None = None
     ssh_auth: SSHAuthPolicy | None = None
+    device: DevicePack | None = None
     instance_id: str | None = None
     organization_id: str | None = None
     resolved_parameters: dict[str, Any] = Field(default_factory=dict)
@@ -321,6 +340,8 @@ class Profile(Model):
 
     @model_validator(mode="after")
     def valid_profile(self) -> Profile:
+        if self.device and self.protocol != 'ssh':
+            raise ValueError('Device packs require SSH')
         if self.schema_version == 2 and not re.fullmatch(r'[a-z][a-z0-9_-]*', self.id):
             raise ValueError('Profile IDs must start with a lowercase letter and use letters, digits, underscores or hyphens')
         if self.schema_version == 1 and (self.parameters or self.contracts or self.command_environment
@@ -374,6 +395,10 @@ class Profile(Model):
 
 
 class Limits(Model):
+    channel_limit: int = Field(default=16, ge=1, le=128)
+    application_depth: int = Field(default=8, ge=1, le=32)
+    screen_columns: int = Field(default=240, ge=20, le=500)
+    screen_rows: int = Field(default=100, ge=5, le=200)
     input_bytes: int = Field(default=16384, ge=128, le=1048576)
     body_bytes: int = Field(default=1048576, ge=128, le=16777216)
     output_bytes: int = Field(default=1048576, ge=128, le=16777216)
@@ -393,8 +418,10 @@ class Limits(Model):
 class ProviderConfig(Model):
     kind: Literal["openai", "azure", "ollama", "bedrock", "gemini"]
     model: str
-    api_key_env: str | None = None
+    api_key_env: str | None = Field(default=None, pattern=r'^[A-Za-z_][A-Za-z0-9_]*$')
     api_key_file: Path | None = None
+    api_key: SecretStr | None = Field(default=None, exclude=True, repr=False)
+    env_file: Path | None = None
     endpoint: str | None = None
     api_version: str | None = None
     region: str | None = None
@@ -408,7 +435,9 @@ class ProviderConfig(Model):
     def valid_provider(self) -> ProviderConfig:
         if not self.model.strip():
             raise ValueError("model cannot be empty")
-        if self.kind == "bedrock" and (self.api_key_env or self.api_key_file):
+        if self.api_key is not None and (self.api_key_env or self.api_key_file):
+            raise ValueError('Choose a literal key or an environment/file reference')
+        if self.kind == "bedrock" and (self.api_key_env or self.api_key_file or self.api_key):
             raise ValueError("Bedrock uses the AWS credential chain; mount AWS_SHARED_CREDENTIALS_FILE")
         if self.max_output_tokens + 256 >= self.context_tokens:
             raise ValueError("context_tokens must leave room for input and max_output_tokens")
@@ -468,13 +497,37 @@ class Deployment(Model):
     log_file: Path | None = None
     limits: Limits = Field(default_factory=Limits)
     providers: dict[str, ProviderConfig] = Field(default_factory=dict)
+    default_provider: str | None = None
     listeners: list[Listener] = Field(default_factory=list)
     deceptions: list[Deception] = Field(default_factory=list)
     deception_defaults: DeceptionDefaults = Field(default_factory=DeceptionDefaults)
     extensions: dict[str, list[str]] = Field(default_factory=dict)
 
+    @model_validator(mode='before')
+    @classmethod
+    def inherit_default_provider(cls, value: Any) -> Any:
+        if not isinstance(value, dict) or value.get('default_provider') is None:
+            return value
+        value = dict(value)
+        default = value['default_provider']
+        defaults = dict(value.get('deception_defaults') or {})
+        defaults.setdefault('provider', default)
+        value['deception_defaults'] = defaults
+        listeners = []
+        for listener in value.get('listeners', []):
+            if isinstance(listener, dict):
+                listener = dict(listener)
+                listener.setdefault('provider', default)
+            elif 'provider' not in listener.model_fields_set:
+                listener = listener.model_copy(update={'provider': default})
+            listeners.append(listener)
+        value['listeners'] = listeners
+        return value
+
     @model_validator(mode="after")
     def valid_deployment(self) -> Deployment:
+        if self.default_provider and self.default_provider not in self.providers:
+            raise ValueError(f"Unknown default provider '{self.default_provider}'")
         if len({x.name for x in self.listeners}) != len(self.listeners):
             raise ValueError("Listener names must be unique")
         if not any(x.enabled for x in self.listeners) and not self.deceptions:

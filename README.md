@@ -65,6 +65,43 @@ to enable LLM intent summaries. Without it, summaries use judgement `UNKNOWN`.
 A profile using generative fallback must have a provider; deterministic profiles
 can run entirely without one.
 
+Deployments and assessment specs can share an ignored `providers.local.yaml` catalog
+with a global default and explicit listener overrides. Copy
+[`examples/providers.yaml`](examples/providers.yaml), add
+`provider_config: providers.local.yaml` to your YAML, and put API keys in its `.env`
+file using `DECEIVE_API_KEY=...`. Process environment values take precedence.
+Bedrock can continue using a named AWS profile without copying AWS keys into `.env`.
+The CLI sends only selected providers' referenced variables to managed containers;
+it does not mount the `.env` or provider catalog. See
+[shared configuration](docs/configuration.md#shared-provider-settings-and-secrets).
+
+Whole-device SSH packs are available without model credentials:
+
+```sh
+uv run deceive serve --profile linux-device
+# Also: macos-device, freebsd-device, ios-device
+```
+
+They provide private channel state, nested interpreters or device CLI modes,
+ordinary commands and bounded terminal applications. Unix packs include a pager,
+process monitor, editor and configuration menu fixture. Application changes stay
+coherent with command discovery. Supported keys include editor insertion undo and
+literal search, and bounded monitor refresh controls. The shared terminal engine
+supports editing, history recall, cancellation and resize. Pager search cancellation
+retains its application; IOS uses inline paging and configurable terminal length.
+Monitor resource figures and IOS interface views share authoritative virtual facts.
+Editor saves use normal LF text-file termination; long-file pager movement changes
+the viewport, and virtual CPU totals accumulate across refreshes. See
+[whole-device sessions](docs/device-sessions.md) for supported behavior and limits.
+Transient SSH model failures return an ordinary error while retaining the private
+channel state. `Model attempt failed` records identify the provider/model, request,
+attempt and sanitized exception class; a correlated deterministic final response
+records the delivered failure bytes. IOS interface and installed-route views agree
+when a virtual interface is shut down. FreeBSD uses its native `amd64` machine label.
+Copy `examples/testing.yaml` to ignored `testing.local.yaml` for explicit online
+model checks; automated CI remains offline. Model smoke never implies independent
+realism qualification.
+
 The bundled `linux-ssh` version 5 requests structured model replies so stdout,
 stderr and command exit status remain separate. Output bytes retain their trailing
 newlines, including commands that emit none. Interactive terminals display both
@@ -121,15 +158,33 @@ The sudo profile exposes the agreed CLI probes and simulated UID bypass over SSH
 on port 8022. The Apache profile exposes single-encoded traversal to declared
 virtual files over HTTP/1.1 on port 8080. They do not run vulnerable software or
 execute payloads. See their [approved criteria](docs/reference-acceptance-proposal.md).
-Interactive SSH accepts Enter from a local terminal, echoes typed characters when
-the client requests terminal echo, and supports Backspace for basic line editing.
-Type `exit` to close the simulated shell. Full PTY line discipline remains outside
-the current emulation.
+Interactive SSH accepts Enter, requested echo, cursor editing, history recall,
+completion and cancellation. Nested exit returns to the parent interpreter.
+Complete PTY discipline and shell compatibility remain outside the bounded emulation.
 The sudo and sshhole profiles now include virtual home content and basic navigation.
 Their declared CVE interactions stay deterministic without credentials. With an
 explicitly configured provider, unfamiliar commands use bounded model fallback
 guided by the same virtual identity and files; model-free mode retains a limited
 fallback. Neither mode executes commands on the host.
+The sudo profile also exposes profile-owned `/bin` and `/usr/bin` inventories.
+`python` and `python3` open a bounded virtual Python 3.7 prompt with simple
+expressions, printing, virtual directory listings and virtual file reads. This is
+not a general Python interpreter; unsupported code cannot execute on the host.
+The inventory is an initial device fact, not an allowlist for model-backed
+interaction. With a provider selected, unfamiliar commands and Python statements
+can receive model replies. Validated model proposals can add private virtual
+executables and files; later listings and discovery use that same private state.
+Without a provider, unsupported interactions return the declared fallback.
+For CLI-only startup, select a shared local provider catalog without another
+deployment file:
+
+```sh
+uv run deceive serve --profile sudo-2019-14287 \
+  --provider-config providers.local.yaml --preflight
+```
+
+The catalog's global default chooses the provider; the public profile contains
+no model or credential choice.
 Sudo profile/suite version 2 uses the human-approved stock-style denial wording;
 the original version 1 criteria and agreement remain in packaged history.
 The model-free `sshhole-2026-123158` profile emulates the Alpine/OpenSSH musl
@@ -213,6 +268,9 @@ uv run deceive deployment stop demo
 uv run deceive deployment start demo
 ```
 
+Managed deployments run provider preflight inside the container before opening
+listeners. Explicit `--skip-preflight` is available when creating a new deployment;
+static checks always run. Already-ready deployments do not repeat billable checks.
 Managed deployments publish on localhost by default, retain one data volume,
 and reuse stopped containers. They use a local image without pulling/building
 at startup. See [operator commands](docs/operations.md) for composition, port
@@ -240,8 +298,9 @@ uv run deceive serve --config examples/composition-deployment.yaml \
 ```
 
 This example combines two independently authored profiles on one HTTPS listener
-supporting HTTP/2 and HTTP/3. Validation prints the resolved listener plan without
-opening sockets, creating data files, or contacting model providers. `serve`
+supporting HTTP/2 and HTTP/3. Validation prints the resolved listener plan and, by default, checks selected model
+providers with bounded live requests. Use `--offline` for static checks without
+credentials or provider calls. Neither mode opens listeners or creates runtime files. `serve`
 always repeats compatibility validation before opening any listener. Conflicts
 fail with a nonzero exit code; profile order never silently resolves a conflict.
 Existing standalone profiles continue to work and use separate listeners unless
@@ -284,7 +343,7 @@ account, `*` accepts any password, and unknown users accept any password.
 Session events retain UTC millisecond timestamps, endpoint addresses, `task_name`
 IDs, sensor fields, and base64 input/output details. Deterministic output is a
 `Deception response`; actual model output is an `LLM response`. One `Session
-summary` is emitted per session. Intent analysis is optional and failures produce
+summary` is emitted per connection, covering its private channels. Intent analysis is optional and failures produce
 `UNKNOWN`. HTTP records also preserve binary body content and structured request
 metadata; these are not raw packet captures.
 SSH responses add base64 `ssh_stdout`/`ssh_stderr` and numeric `ssh_exit_status`.

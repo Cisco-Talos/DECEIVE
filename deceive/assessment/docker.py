@@ -21,14 +21,15 @@ from deceive.telemetry import Telemetry
 
 
 class Docker:
-    def call(self, *args: str, timeout: float = 60) -> str:
+    def call(self, *args: str, timeout: float = 60,
+             env: dict[str, str] | None = None) -> str:
         try:
             result = subprocess.run(["docker", *args], capture_output=True, text=True,
-                                    timeout=timeout, check=False)
+                                    timeout=timeout, check=False, env=env)
         except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
             raise RuntimeError(f"Docker {args[0]} unavailable or timed out") from exc
         if result.returncode:
-            raise RuntimeError(f"Docker {args[0]} failed: {result.stderr.strip()[-1500:]}")
+            raise RuntimeError(f"Docker {args[0]} failed; check daemon, image and mounts")
         return result.stdout.strip()
 
     def preflight(self) -> None:
@@ -120,7 +121,9 @@ def aws_credentials(providers: dict, directory: Path | None) -> tuple[list[tuple
     if not bedrock:
         return [], {}
     if directory is None:
-        if any(provider.aws_profile for provider in bedrock):
+        from deceive.credentials import provider_environment
+        if any(provider.aws_profile or any(key in provider_environment(provider, 'aws')
+               for key in ('AWS_PROFILE', 'AWS_DEFAULT_PROFILE')) for provider in bedrock):
             raise ValueError("A named AWS profile requires docker.aws_dir for assessment")
         return [], {}
     if not directory.is_dir() or "," in str(directory):
@@ -135,6 +138,11 @@ async def deploy(docker: Docker, run: Path, state: dict, spec: Spec, target: Tar
                  handle: str, image: str, loop_dir: Path) -> dict:
     config = target_deployment(spec, target)
     plan = resolve(config)
+    selected = {listener.provider for listener in plan.listeners if listener.provider}
+    config.providers = {alias: provider for alias, provider in config.providers.items() if alias in selected}
+    config.default_provider = None
+    from deceive.credentials import literal_name, selected_environment
+    injected = selected_environment(config.providers, selected)
     if len(plan.listeners) == 1:
         listener = plan.listeners[0]
         if target.protocol:
@@ -166,6 +174,7 @@ async def deploy(docker: Docker, run: Path, state: dict, spec: Spec, target: Tar
     endpoints, secrets, envs, reservations = [], [], set(), []
     profiles = []
     deployment = config.model_dump(mode="json")
+    deployment['default_provider'] = None
     deployment.update(data_dir="/data", log_file=None, deceptions=[], organization=None,
                       sensor_name=f'{state["run_id"]}-loop-{state["current"]["number"]}-attempt-{state["current"]["attempt"]}-{handle}')
     for index, listener in enumerate(plan.listeners):
@@ -229,17 +238,19 @@ async def deploy(docker: Docker, run: Path, state: dict, spec: Spec, target: Tar
                              "limitations": member.limitations, "listener": listener.name})
     for name, provider in config.providers.items():
         raw = deployment["providers"][name]
+        raw['env_file'] = None
         if provider.api_key_file:
             secrets.append((str(provider.api_key_file), "/material/provider-" + name))
             raw["api_key_file"] = "/material/provider-" + name
         if provider.api_key_env:
             envs.add(provider.api_key_env)
+            if provider.api_key_env not in injected:
+                raise ValueError(f'Set credential environment variable {provider.api_key_env}')
+        elif provider.api_key is not None:
+            raw['api_key_env'] = literal_name(name)
+            envs.add(literal_name(name))
         else:
-            envs.update({"openai": ["OPENAI_API_KEY"], "azure": ["AZURE_OPENAI_API_KEY"],
-                         "gemini": ["GOOGLE_API_KEY", "GEMINI_API_KEY"],
-                         "bedrock": ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN",
-                                     "AWS_DEFAULT_REGION", "AWS_REGION", "AWS_PROFILE", "AWS_DEFAULT_PROFILE"],
-                         }.get(provider.kind, []))
+            envs.update(injected)
     aws_mounts, aws_env = aws_credentials(config.providers, spec.docker.aws_dir)
     secrets.extend(aws_mounts)
     if config.providers and not spec.docker.provider_network:
@@ -295,11 +306,12 @@ async def deploy(docker: Docker, run: Path, state: dict, spec: Spec, target: Tar
             for source, destination in secrets:
                 options += ["--mount", f"type=bind,src={source},dst={destination},readonly"]
             for variable in sorted(envs):
-                if os.environ.get(variable):
+                if variable in injected:
                     options += ["-e", variable]
             for variable, value in aws_env.items():
                 options += ["-e", variable + "=" + value]
-            docker.call(*options, image, "serve", "--config", "/stage/deployment.yaml")
+            docker.call(*options, image, "serve", "--config", "/stage/deployment.yaml",
+                        **({'env': dict(os.environ) | injected} if injected else {}))
         for sock in reservations:
             sock.close()
         entry = {"container": name, "volume": volume, "layout": layout, "image": image,

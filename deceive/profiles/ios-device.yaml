@@ -1,0 +1,54 @@
+{
+  "schema_version": 2,
+  "id": "ios-device",
+  "version": "1",
+  "protocol": "ssh",
+  "description": "Bounded whole-device IOS XE 17.9 session with private virtual state.",
+  "requirements": {
+    "protocol": "ssh",
+    "preferred_port": 8022,
+    "capabilities": [
+      "ssh.commands",
+      "ssh.device",
+      "ssh.fullscreen"
+    ]
+  },
+  "device": {
+    "platform": "ios",
+    "interpreter": "ios",
+    "model_effects": true,
+    "applications": []
+  },
+  "identity": {
+    "hostname": "edge-router-01",
+    "os": "IOS XE 17.9",
+    "kernel": "17.9",
+    "architecture": "x86_64",
+    "username": "guest",
+    "uid": 1000,
+    "ssh_version": "OpenSSH_9.3",
+    "banner": "IOS XE 17.9\nAuthorized access only."
+  },
+  "files": {
+    "/etc/hostname": "edge-router-01\n",
+    "/home/guest/README.txt": "Device workspace\nUse help to discover commands.\n",
+    "/home/guest/notes.txt": "alpha\nbeta\ngamma\n",
+    "/etc/passwd": "guest:x:1000:1000:Guest:/home/guest:/bin/ios\n"
+  },
+  "behaviors": [],
+  "fallback": "llm_if_available",
+  "fallback_reply": {
+    "stderr": "ios: command not found\n",
+    "exit_status": 127
+  },
+  "ssh_response_format": "json",
+  "prompt": "Simulate only the selected platform and current interaction. Authoritative device facts and private state take precedence. Propose virtual effects explicitly; never invent lasting effects absent from state.",
+  "references": [
+    "https://developer.cisco.com/docs/iox/phase-2-understanding-the-cisco-ios-command-line-interface-cli/"
+  ],
+  "limitations": [
+    "Bounded interpreter and application subsets; no real programs execute.",
+    "Reference contents and naming are fictional design fixtures.",
+    "Real-model realism requires credentialed online assessment; offline tests do not qualify it."
+  ]
+}

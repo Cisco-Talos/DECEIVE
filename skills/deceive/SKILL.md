@@ -31,7 +31,7 @@ independent research as well as functional contracts.
 | Available deceptions or CVEs | `profile list`, optionally `--vulnerabilities`, `--protocol`, `--directory DIR` |
 | Requirements, identity or limitations | `profile show ID_OR_FILE` |
 | Validate one authored profile | `profile validate FILE` |
-| Validate a complete selection | `config validate --config FILE --deception ID` (repeatable, additive) |
+| Validate a complete selection | `config validate --config FILE --deception ID` (live by default; `--offline` for static checks) |
 | Run named deceptions | `deployment start NAME` with selection/config and existing `--image` |
 | Run in foreground or natively | `serve` with the same selection/config flags |
 | Find or inspect deployments | `deployment list` / `deployment status NAME` |
@@ -55,7 +55,17 @@ local directories before asking the user. Never silently rename a conflicting
 profile or hide a composition error. Preserve explicit provider/model/region and
 credential references; examples are not defaults to hardcode.
 
-Validate the exact combined YAML/CLI selection before launching. `start` and
+Deployments and assessment specifications may reference `provider_config` for a shared
+local catalog with `default_provider` and `env_file`. Preserve explicit aliases and
+explicit nulls that disable inheritance. Keep historical run inputs frozen when
+migrating operational copies. The CLI filters dotenv credentials by selected
+providers; never mount a whole `.env` or copy AWS keys out of the credential chain.
+See [shared provider settings](../../docs/configuration.md#shared-provider-settings-and-secrets).
+
+Validate the exact combined YAML/CLI selection before launching. Configuration
+validation defaults to bounded, potentially billable provider checks; use `--offline`
+for static preparation without credentials. Managed startup performs in-container
+provider preflight by default; an already-ready container is not rechecked. `start` and
 `serve` repeat runtime validation. Reuse the user's configuration rather than
 copying provider details into profile YAML. Model-free deceptions need no model.
 Acceptance tests and ordinary pytest remain deterministic; live provider use

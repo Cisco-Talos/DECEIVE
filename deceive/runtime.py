@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 from dataclasses import replace
 import fcntl
 import inspect
@@ -21,6 +22,7 @@ from deceive.providers import Message, Provider, ProviderError, SDKProvider
 from deceive.telemetry import Telemetry, encode
 from deceive.ssh_response import parse_reply, transcript_reply
 from deceive import virtual_files
+from deceive.preflight import PreflightError, probe
 
 
 SYSTEM_PROMPT = """Simulate only the current input. Never invent the user's next input.
@@ -49,6 +51,10 @@ exiting the login shell. Preserve the current command's output characters.
 HTTP_PROMPT = "For HTTP return JSON with body (string), status (integer), headers (pairs of strings).\n"
 
 
+class ModelLimitError(ProviderError):
+    """Local model budgets retain the channel's existing hard-limit policy."""
+
+
 class CapacityError(RuntimeError):
     pass
 
@@ -66,6 +72,7 @@ class Runtime:
         self.profiles = self.plan.profiles
         self.providers = dict(providers or {})
         self.sessions: dict[str, Session] = {}
+        self.channels: dict[str, Session] = {}
         self.listeners = {l.name: l for l in self.plan.listeners}
         self.servers = {}
         self.llm_slots = asyncio.Semaphore(self.limits.llm_concurrency)
@@ -89,7 +96,57 @@ class Runtime:
                 if hasattr(handler, "validate"):
                     handler.validate(spec)
 
-    async def start(self) -> Runtime:
+    async def preflight(self) -> dict:
+        """Check selected inference configurations without creating data or listeners."""
+        selected = sorted({listener.provider for listener in self.listeners.values()
+                           if listener.provider})
+        report = {'mode': 'live', 'verification': 'not-required' if not selected else 'live-verified',
+                  'passed': True, 'checks': []}
+        distinct = {}
+        for name in selected:
+            config = self.config.providers[name]
+            key = fingerprint(config.model_dump(mode='json'))
+            if config.api_key is not None:
+                key += ':' + name
+            if key in distinct:
+                distinct[key]['providers'].append(name)
+                continue
+            entry = {'providers': [name], 'kind': config.kind, 'model': config.model}
+            distinct[key] = entry
+            report['checks'].append(entry)
+        slots = asyncio.Semaphore(self.limits.llm_concurrency)
+
+        async def check(entry: dict) -> None:
+            async with slots:
+                started = time.monotonic()
+                name = entry['providers'][0]
+                stage = 'initialization'
+                try:
+                    if name not in self.providers:
+                        self.providers[name] = SDKProvider(self.config.providers[name],
+                            self.limits.llm_seconds, self.limits.llm_concurrency)
+                    stage = 'request'
+                    async with asyncio.timeout(min(self.limits.llm_seconds, self.limits.request_seconds)):
+                        result = await probe(self.providers[name], self.limits.output_bytes)
+                    entry.update(status='passed', usage={key: value for key, value in result.usage.items()
+                        if type(value) is int and value >= 0})
+                except Exception as exc:
+                    # Intentional SDK boundary: exception text may contain credentials or URLs.
+                    entry.update(status='failed', error={'stage': stage,
+                        'type': type(exc).__name__,
+                        'message': ('Provider initialization failed; check credentials and SDK installation'
+                            if stage == 'initialization' else
+                            'Provider request failed; check access, inference settings and deadlines')})
+                finally:
+                    entry['seconds'] = round(time.monotonic() - started, 3)
+
+        await asyncio.gather(*(check(entry) for entry in report['checks']))
+        if any(entry['status'] != 'passed' for entry in report['checks']):
+            report.update(passed=False, verification='failed')
+            raise PreflightError(report)
+        return report
+
+    async def start(self, *, preflight: bool = False) -> Runtime:
         from deceive.protocols.http import HTTPAdapter
         from deceive.protocols.ssh import SSHAdapter
 
@@ -102,6 +159,13 @@ class Runtime:
             except BlockingIOError as exc:
                 raise ValueError("Data directory is already in use by another DECEIVE process") from exc
             self.write_status()
+            if preflight:
+                try:
+                    report = await self.preflight()
+                except PreflightError as exc:
+                    self.telemetry.emit('Provider preflight', **exc.report)
+                    raise
+                self.telemetry.emit('Provider preflight', **report)
             for name, listener in self.listeners.items():
                 if listener.provider and listener.provider not in self.providers:
                     self.providers[listener.provider] = SDKProvider(
@@ -157,6 +221,7 @@ class Runtime:
         if self.active_requests >= self.limits.requests:
             raise CapacityError("Request capacity exceeded")
         self.active_requests += 1
+        input_recorded = False
         try:
             async with asyncio.timeout(self.limits.request_seconds):
                 async with session.lock:
@@ -182,12 +247,17 @@ class Runtime:
                         raise ValueError("SSH input exceeds configured limit")
                     self.emit(session, "User input", details=encode(raw),
                               request_id=interaction.request_id, **fields)
+                    input_recorded = True
                     # Mutations are private until every output/state check has passed.
                     staged = replace(session, state=dict(session.state),
+                                     device=copy.deepcopy(session.device),
                                      virtual_files=dict(session.virtual_files),
                                      virtual_directories=set(session.virtual_directories),
                                      removed_files=set(session.removed_files))
                     result = await self._dispatch(staged, interaction)
+                    if (session.generation != staged.generation or session.closed
+                            or (session.parent is not None and session.parent.closed)):
+                        raise asyncio.CancelledError('Cancelled session action')
                     owner = self.plan.owners[session.listener].get(result.behavior)
                     if owner is None and len(self.plan.members[session.listener]) == 1:
                         owner = self.plan.members[session.listener][0]
@@ -202,11 +272,13 @@ class Runtime:
                             raise ValueError("Invalid SSH exit status")
                         fields.update(ssh_stdout=encode(result.body), ssh_stderr=encode(result.stderr),
                                       ssh_exit_status=result.exit_status)
+                        if result.chunks:
+                            fields['terminal_chunks'] = [[stream, encode(data)] for stream, data in result.chunks]
                     elif result.stderr:
                         raise ValueError("stderr is only supported for SSH responses")
                     if len(staged.state | result.transition) > 128 or any(
                         not isinstance(k, str) or not isinstance(v, str) or len(k) > 128 or len(v) > 4096
-                        for k, v in result.transition.items()
+                        for k, v in (staged.state | result.transition).items()
                     ):
                         raise ValueError("Invalid state transition")
                     if set(result.transition) & {"hostname", "os", "kernel", "architecture"}:
@@ -219,6 +291,11 @@ class Runtime:
                     session.virtual_files = staged.virtual_files
                     session.virtual_directories = staged.virtual_directories
                     session.removed_files = staged.removed_files
+                    session.device = staged.device
+                    if session.device is not None:
+                        session.device.revision += 1
+                        fields.update(state_revision=session.device.revision,
+                                      application=getattr(session.device.application, 'kind', None))
                     if interaction.protocol == 'ssh':
                         session.last_exit_status = result.exit_status
                     session.touched = time.monotonic()
@@ -228,6 +305,11 @@ class Runtime:
                     session.history.extend([Message("user", raw.decode("utf-8", "replace")),
                                             Message("assistant", assistant)])
                     self._trim_history(session)
+                    if session.parent is not None:
+                        session.parent.history.extend(session.history[-2:])
+                        session.parent.input_count += 1
+                        session.parent.touched = session.touched
+                        self._trim_history(session.parent)
                     self.emit(session, "LLM response" if result.origin == "llm" else "Deception response",
                               details=encode(result.model_output if result.model_output is not None else result.body),
                               response_origin=result.origin,
@@ -236,21 +318,39 @@ class Runtime:
                               behavior=result.behavior, request_id=interaction.request_id,
                               http_status=result.status, **fields)
                     return result
+        except asyncio.CancelledError:
+            if input_recorded and interaction.protocol == 'ssh':
+                self.emit(session, 'Deception response', details=encode(b''),
+                    request_id=interaction.request_id, interactive=interaction.interactive,
+                    ssh_stdout=encode(b''), ssh_stderr=encode(b''), ssh_exit_status=130,
+                    response_origin='deterministic', response_stage='final',
+                    response_body_base64=encode(b''), behavior='cancelled')
+            raise
         finally:
             self.active_requests -= 1
 
     async def _dispatch(self, session: Session, interaction: Interaction) -> Response:
         profile = self.profiles[session.listener]
+        if interaction.protocol == 'ssh' and not (
+            profile.command_environment and profile.command_environment.dialect != 'linux'
+        ):
+            from deceive.device.engine import Interpreter
+            return await Interpreter(self, profile, session).respond(interaction)
+        return await self._dispatch_direct(session, interaction)
+
+    async def _dispatch_direct(self, session: Session, interaction: Interaction,
+                               *, model_only: bool = False) -> Response:
+        profile = self.profiles[session.listener]
         from deceive import contracts, commands
-        if profile.contracts:
+        if profile.contracts and not model_only:
             result = await contracts.respond(self, profile, session, interaction)
             if result is not None:
                 return result
-        if profile.command_environment and interaction.protocol == 'ssh':
+        if profile.command_environment and interaction.protocol == 'ssh' and not model_only:
             result = await commands.respond(self, profile, session, interaction)
             if result is not None:
                 return result
-        for spec in profile.behaviors:
+        for spec in profile.behaviors if not model_only else ():
             if not matches(spec, interaction, session):
                 continue
             handler = self.extensions.behaviors[spec.kind]
@@ -261,8 +361,9 @@ class Runtime:
             if result is not None:
                 result.behavior = spec.id
                 return result
-        if profile.fallback == "reject" or (profile.fallback == "llm_if_available" and
-                                            not self.listeners[session.listener].provider):
+        if ((not model_only and profile.fallback == "reject") or
+            (profile.fallback == "llm_if_available" and not self.listeners[session.listener].provider) or
+            (model_only and not self.listeners[session.listener].provider)):
             return make_response(profile.fallback_reply)
         listener = self.listeners[session.listener]
         raw = interaction.command if interaction.protocol == "ssh" else json.dumps({
@@ -276,24 +377,91 @@ class Runtime:
         if virtual_files.enabled(profile) or profile.command_environment:
             current_files, current_dirs = (commands.file_view(profile, session) if profile.command_environment
                                           else virtual_files.view(profile, session))
-            files = {path: body.decode("utf-8", "replace") for path, body in current_files.items()}
+            executables = set(virtual_files.executable_paths(profile, session))
+            files = {path: body.decode("utf-8", "replace") for path, body in current_files.items()
+                     if path not in executables}
             directories = sorted(current_dirs)
         facts = json.dumps({"identity": profile.identity.model_dump(), "files": files,
                             "directories": directories,
                             "user": session.username, "state": session.state,
                             "last_exit_status": session.last_exit_status,
                             "interactive": interaction.interactive})
+        if profile.device:
+            from deceive.device.engine import ensure, network_interfaces, network_routes, resources
+            device = ensure(profile, session)
+            facts += '\nDevice facts: ' + json.dumps({
+                'hostname': device.hostname, 'platform': profile.device.platform,
+                'interpreter': device.interpreter, 'mode': device.mode,
+                'configuration': device.configuration, 'processes': device.processes,
+                'executables': sorted(virtual_files.executable_paths(profile, session)),
+                'network_interfaces': network_interfaces(profile, session),
+                'network_routes': network_routes(profile, session),
+                'resources': resources(profile, session),
+                'dialogue': device.dialogue, 'revision': device.revision})
+            facts += ('\nInventories marked complete are exhaustive for this virtual device. '
+                      'Do not invent additional interfaces or processes in other command views. '
+                      'Use these same resource, address and interface-status facts in unfamiliar output. '
+                      'If a requested detail is unavailable, report a bounded ordinary error instead of '
+                      'contradicting the supplied inventory.')
         response_prompt = ((SSH_JSON_PROMPT if profile.ssh_response_format == "json" else SSH_TEXT_PROMPT)
                            if interaction.protocol == "ssh" else HTTP_PROMPT)
         prompt = SYSTEM_PROMPT + response_prompt + "\n" + facts + "\n" + profile.prompt
-        text = await self.invoke(listener, [Message("system", prompt)] + session.history + [Message("user", raw)], session)
+        if model_only and profile.device and getattr(session.device, 'dialogue', None):
+            prompt += ('\nThe current input belongs to the active nested interpreter. '
+                       'Do not parse it as a shell command or run a host program. '
+                       'Keep the current interpreter prompt unless it explicitly exits.')
+        if profile.device and profile.device.model_effects:
+            prompt += ('\nYou may additionally return effects: {write_files: {virtual_path: text}, '
+                       'remove_files: [virtual_path], add_executables: [virtual_path], '
+                       'remove_executables: [virtual_path], '
+                       'configuration: {hostname: name, description: text}, '
+                       'cwd: virtual_directory}; all fields are optional. Only private writable paths '
+                       'are allowed for file writes. Executable declarations only change the private '
+                       'virtual inventory under /bin, /usr/bin or /usr/sbin; they never execute host '
+                       'programs. Register an executable when claiming an unfamiliar shell command '
+                       'is installed. Optional dialogue: {prompt: text, echo: boolean} asks for the '
+                       'next input without a shell prompt. Do not emit terminal escape sequences. '
+                       'Supplied state is authoritative. Never claim effects absent from this action.')
+        try:
+            text = await self.invoke(listener, [Message("system", prompt)] + session.history + [Message("user", raw)], session)
+        except (ProviderError, TimeoutError) as exc:
+            if interaction.protocol != 'ssh' or isinstance(exc, ModelLimitError) or not listener.provider:
+                raise
+            config = self.config.providers[listener.provider]
+            self.emit(session, 'Model attempt failed', provider=config.kind, model=config.model,
+                      request_id=interaction.request_id, interactive=interaction.interactive,
+                      error_type=type(exc).__name__, attempt=1)
+            if profile.device and profile.device.platform == 'ios':
+                return Response(body=b'% Command temporarily unavailable.\n', exit_status=1,
+                                behavior='provider-error')
+            return Response(stderr=b'Command temporarily unavailable.\n', exit_status=1,
+                            behavior='provider-error')
         if interaction.protocol == "ssh":
             if text.strip() == "YYY-END-OF-SESSION-YYY":
                 return Response(close=True, exit_status=session.last_exit_status, behavior="llm",
                                 origin="llm", model_output=text)
             if profile.ssh_response_format == "json":
                 try:
-                    return parse_reply(text)
+                    result = parse_reply(text, allow_effects=bool(profile.device and profile.device.model_effects))
+                    if profile.device and profile.device.model_effects:
+                        from deceive.device.engine import apply_effects
+                        candidate = replace(session, state=dict(session.state),
+                            virtual_files=dict(session.virtual_files),
+                            virtual_directories=set(session.virtual_directories),
+                            removed_files=set(session.removed_files), device=copy.deepcopy(session.device))
+                        apply_effects(profile, candidate, result, interaction)
+                        session.state = candidate.state
+                        session.virtual_files = candidate.virtual_files
+                        session.removed_files = candidate.removed_files
+                        session.device = candidate.device
+                    if interaction.component:
+                        self.emit(session, 'LLM response', details=encode(text),
+                            response_origin='llm', response_stage='component',
+                            request_id=interaction.request_id, interactive=interaction.interactive,
+                            component_command=interaction.command,
+                            ssh_stdout=encode(result.body), ssh_stderr=encode(result.stderr),
+                            ssh_exit_status=result.exit_status)
+                    return result
                 except (ValueError, TypeError, RecursionError):
                     self.emit(session, "LLM response", details=encode(text), response_origin="llm",
                               behavior="llm", request_id=interaction.request_id,
@@ -327,17 +495,27 @@ class Runtime:
         while len(messages) > 2 and sum(len(m.content.encode()) for m in messages) > budget:
             del messages[1:3]
         if sum(len(m.content.encode()) for m in messages) > budget:
-            raise ProviderError("Prompt exceeds configured context budget")
+            raise ModelLimitError("Prompt exceeds configured context budget")
         async with asyncio.timeout(self.limits.llm_seconds):
             async with self.llm_slots:
                 result = await self.providers[listener.provider].complete(messages)
         if len(result.text.encode()) > self.limits.output_bytes:
-            raise ProviderError("Model response exceeds configured output limit")
+            raise ModelLimitError("Model response exceeds configured output limit")
         self.telemetry.emit("Model call", **(session.context if session else {}),
                             provider=config.kind, model=result.model or config.model, usage=result.usage)
         return result.text
 
     async def end_session(self, session: Session) -> None:
+        if session.parent is not None:
+            session.closed = True
+            session.generation += 1
+            session.history.clear()
+            session.state.clear()
+            session.virtual_files.clear()
+            session.virtual_directories.clear()
+            session.removed_files.clear()
+            session.device = None
+            return
         async with session.lock:
             if session.summary_generated:
                 return
@@ -367,6 +545,7 @@ class Runtime:
                 session.virtual_files.clear()
                 session.virtual_directories.clear()
                 session.removed_files.clear()
+                session.device = None
                 self.sessions.pop(session.id, None)
 
     async def _maintain(self) -> None:

@@ -1,0 +1,16 @@
+{
+  "id": "ios-device",
+  "cases": [
+    {
+      "id": "baseline",
+      "steps": [
+        {
+          "command": "show version",
+          "expect": {
+            "contains": "IOS XE"
+          }
+        }
+      ]
+    }
+  ]
+}

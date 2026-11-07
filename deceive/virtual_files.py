@@ -10,6 +10,7 @@ from deceive.models import Behavior, Profile
 
 MAX_NODES = 128
 MAX_BYTES = 65536
+EXECUTABLE_STUB = b'\x7fELF\x02\x01\x01\x00'
 
 
 def enabled(profile: Profile) -> bool:
@@ -18,8 +19,12 @@ def enabled(profile: Profile) -> bool:
 
 def view(profile: Profile, session: Session) -> tuple[dict[str, bytes], set[str]]:
     files = {p: text.encode() for p, text in profile.files.items() if p not in session.removed_files}
+    for executable in executable_paths(profile, session):
+        if executable not in session.removed_files:
+            files.setdefault(executable, EXECUTABLE_STUB)
     files.update(session.virtual_files)
-    home = '/root' if session.username == 'root' else '/home/' + session.username
+    from deceive.device.engine import home as device_home
+    home = device_home(profile, session)
     directories = {'/', '/home', home} | session.virtual_directories
     for behavior in profile.behaviors:
         if behavior.kind == 'virtual_files':
@@ -31,10 +36,19 @@ def view(profile: Profile, session: Session) -> tuple[dict[str, bytes], set[str]
     return files, directories
 
 
+def executable_paths(profile: Profile, session: Session | None = None) -> list[str]:
+    baseline = [path for behavior in profile.behaviors if behavior.kind == 'virtual_files'
+                for path in behavior.options.get('executables', [])]
+    device = getattr(session, 'device', None)
+    additions = getattr(device, 'executable_additions', [])
+    removals = set(getattr(device, 'executable_removals', []))
+    return list(dict.fromkeys(path for path in baseline + additions if path not in removals))
+
+
 def validate(spec: Behavior, profile: Profile | None) -> None:
     if profile is not None and profile.protocol != 'ssh':
         raise ValueError('Virtual files require SSH')
-    if set(spec.options) - {'directories', 'listing_time'}:
+    if set(spec.options) - {'directories', 'listing_time', 'executables'}:
         raise ValueError('Unknown virtual_files option')
     listing_time = spec.options.get('listing_time', 'Jan 15 09:00')
     if not isinstance(listing_time, str) or not re.fullmatch(
@@ -48,6 +62,14 @@ def validate(spec: Behavior, profile: Profile | None) -> None:
         or p.startswith('//') or posixpath.normpath(p) != p for p in directories
     ):
         raise ValueError('Virtual directories must be bounded, normalized absolute paths')
+    executables = spec.options.get('executables', [])
+    if not isinstance(executables, list) or len(executables) > MAX_NODES or any(
+        not isinstance(p, str) or not re.fullmatch(r'/(?:bin|usr/bin|usr/sbin)/[A-Za-z0-9_.+-]+', p)
+        for p in executables
+    ) or len(set(executables)) != len(executables):
+        raise ValueError('Virtual executables must be unique, bounded /bin or /usr/bin paths')
+    if profile is not None and any(p in profile.files for p in executables):
+        raise ValueError('Virtual executables cannot replace profile files')
     if profile is not None and any(p.startswith('//') or '\x00' in p or
         posixpath.normpath(p) != p or len(p.encode()) > 4096 for p in profile.files):
         raise ValueError('Virtual file names must be bounded, normalized absolute paths')
@@ -56,7 +78,8 @@ def validate(spec: Behavior, profile: Profile | None) -> None:
 def shell_name(profile: Profile, session: Session) -> str:
     """Use the simulated account's shell for diagnostics when it is declared."""
     account = profile.ssh_auth.accounts.get(session.username) if profile.ssh_auth else None
-    return posixpath.basename(account.shell) if account else 'bash'
+    return (posixpath.basename(account.shell) if account else
+            profile.device.interpreter if profile.device else 'bash')
 
 
 def respond(profile: Profile, spec: Behavior, interaction: Interaction,
@@ -99,7 +122,8 @@ def respond(profile: Profile, spec: Behavior, interaction: Interaction,
     if not words or words[0] not in {'cat', 'ls', 'cd', 'touch', 'mkdir', 'rm', 'echo', 'wc'}:
         return None
     files, directories = view(profile, session)
-    home = '/root' if session.username == 'root' else '/home/' + session.username
+    from deceive.device.engine import home as device_home
+    home = device_home(profile, session)
     cwd = session.state.get('cwd', home)
 
     def path(name: str) -> str:
@@ -110,6 +134,9 @@ def respond(profile: Profile, spec: Behavior, interaction: Interaction,
 
     def error(command: str, name: str, reason: str, status: int = 1) -> Response:
         return Response(stderr=f'{command}: {name}: {reason}\n'.encode(), exit_status=status)
+
+    def protected_binary_path(key: str) -> bool:
+        return key.startswith(('/bin/', '/usr/bin/', '/usr/sbin/'))
 
     def capacity(new_files: dict[str, bytes], new_dirs: set[str], removed: set[str]) -> bool:
         return (len(new_files) + len(new_dirs) + len(removed) <= MAX_NODES
@@ -170,6 +197,13 @@ def respond(profile: Profile, spec: Behavior, interaction: Interaction,
                 if item == home:
                     owner = session.username
                 mode = 'drwxr-xr-x' if directory else '-rw-r--r--'
+                metadata = getattr(session.device, 'metadata', {}).get(item, {})
+                if not directory and 'mode' in metadata:
+                    bits = int(metadata['mode'], 8)
+                    mode = '-' + ''.join(letter if bits & (1 << (8 - index)) else '-'
+                                         for index, letter in enumerate('rwxrwxrwx'))
+                elif item in executable_paths(profile, session):
+                    mode = '-rwxr-xr-x'
                 if item in {'/tmp', '/var/tmp'}:
                     mode = 'drwxrwxrwt'
                 links = 2 + sum(posixpath.dirname(p) == item and p != item for p in directories) if directory else 1
@@ -185,6 +219,8 @@ def respond(profile: Profile, spec: Behavior, interaction: Interaction,
         updates, dirs, removed = dict(session.virtual_files), set(session.virtual_directories), set(session.removed_files)
         for name in args:
             key = path(name)
+            if protected_binary_path(key):
+                return error(command, name, 'Permission denied')
             if command == 'rm':
                 if key not in files:
                     return error('rm: cannot remove', "'" + name + "'", 'Is a directory' if key in directories else 'No such file or directory')
@@ -209,6 +245,8 @@ def respond(profile: Profile, spec: Behavior, interaction: Interaction,
         if any('$' in a or '`' in a or a in {'>', '>>'} for a in args[:-2]):
             return None
         key = path(args[-1])
+        if protected_binary_path(key):
+            return error(shell, args[-1], 'Permission denied')
         if key in directories:
             return error(shell, args[-1], 'Is a directory')
         if posixpath.dirname(key) not in directories:

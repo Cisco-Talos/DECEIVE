@@ -216,6 +216,18 @@ profiles. The `directories` option lists normalized absolute virtual directories
 such as `/tmp` and `/var/tmp`. Baseline files still come from `profile.files`.
 An optional `listing_time` supplies one stable ls-style display date for the
 profile's virtual listings; it does not implement per-file timestamps.
+An optional `executables` list declares virtual paths under `/bin`, `/usr/bin`
+or `/usr/sbin`. Listings show them as executable files with fixed small binary
+fixtures; they never read or run the container's executables. Installed-command
+discovery and supported interpreter entry points use the same declared paths.
+The sudo reference profile declares `python` and `python3`, which provide a
+bounded Python 3.7 prompt for simple expressions and virtual reads. Arbitrary
+Python programs, imports and system calls are outside this interpreter. When a
+provider is configured, unfamiliar safe statements use the model in the current
+Python context. Forbidden host-execution primitives remain blocked. The initial
+executable list is not a complete whitelist for model-backed sessions: validated
+model effects can add private virtual programs, visible to `ls` and `which` on
+the same channel. Deterministic vulnerability commands retain their priority.
 Reads, listings, current directory and supported writes share one connection's
 private view; another connection starts from the unchanged baseline. Generative
 fallback receives that current view too.
@@ -294,3 +306,11 @@ capabilities must be reported, not disguised with plausible text. The HTTP
 adapter's version-constrained Hypercorn integration owns sockets/tasks for
 ephemeral ports, admission, readiness, and shutdown; protocol parsing remains in
 Hypercorn/aioquic. Raw framing exploits and exact host fingerprints are excluded.
+
+## Whole-device SSH packs
+
+The optional `device` declaration selects platform, interpreter, virtual home,
+full-screen applications and validated model effects. See the
+[device session guide](device-sessions.md) for schemas, state ownership, terminal
+support, model actions, telemetry and offline/online acceptance boundaries.
+`ssh.device` and `ssh.fullscreen` are additional engine capabilities.

@@ -121,6 +121,8 @@ celerybeat.pid
 
 # Environments
 .env
+.env.*
+!.env.example
 .venv
 env/
 venv/
@@ -173,6 +175,9 @@ SSH/DEPLOY/
 /data/
 /examples/data/
 /deployment.yaml
+/testing.local.yaml
+/assessment.local.yaml
+*.local.yaml
 /migrated/
 /logs/
 /results/

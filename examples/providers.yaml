@@ -1,0 +1,17 @@
+# Copy to providers.local.yaml beside your local deployment files.
+# This catalog is also accepted by assessment specifications.
+schema_version: 1
+env_file: .env
+default_provider: simulation
+providers:
+  simulation:
+    kind: openai
+    model: YOUR_MODEL
+    api_key: ${env:DECEIVE_API_KEY}
+    temperature: null
+  # Override a listener with provider: alternate, or disable with provider: null.
+  # alternate:
+  #   kind: bedrock
+  #   model: YOUR_MODEL_OR_INFERENCE_PROFILE_ID
+  #   region: YOUR_REGION
+  #   aws_profile: YOUR_LOCAL_AWS_PROFILE

@@ -22,7 +22,7 @@ def main() -> None:
         env = dict(os.environ, UV_TOOL_DIR=str(root / "tools"), UV_TOOL_BIN_DIR=str(root / "bin"))
         env.pop("PYTHONPATH", None)
         started = time.monotonic()
-        subprocess.run(["uv", "tool", "install", "--python", "3.11", str(wheel)],
+        subprocess.run(["uv", "tool", "install", "--python", "3.11", "--with", "pyte>=0.8,<0.9", "--with", "openai>=2,<3", str(wheel)],
                        cwd=root, env=env, check=True)
         seconds = time.monotonic() - started
         binary = root / "bin/deceive"
@@ -55,7 +55,7 @@ def main() -> None:
         listing = json.loads(subprocess.check_output([str(binary), "deployment", "list", "--state-dir", str(managed), "--json"],
                                                     cwd=root, env=env, text=True))
         assert listing["ok"] and not listing["data"]["deployments"] and not managed.exists()
-        subprocess.run([str(binary), "config", "validate", "--deception", "sudo-2019-14287",
+        subprocess.run([str(binary), "config", "validate", "--offline", "--deception", "sudo-2019-14287",
                         "--deception", "apache-2021-41773", "--data-dir", str(root / "not-created")],
                        cwd=root, env=env, check=True)
         assert not (root / "not-created").exists()
@@ -92,6 +92,9 @@ asyncio.run(run())
         subprocess.run([str(interpreter), "-c", composition_program], cwd=root, env=env, check=True)
         ssh_program = Path(__file__).with_name("check_ssh_fidelity.py").read_text()
         subprocess.run([str(interpreter), "-c", ssh_program], cwd=root, env=env, check=True)
+        for check in ('check_device_sessions.py', 'check_device_applications.py', 'check_provider_preflight.py'):
+            program = Path(__file__).with_name(check).read_text()
+            subprocess.run([str(interpreter), '-c', program], cwd=root, env=env, check=True)
         contracts_program = Path(__file__).with_name('check_contracts.py').read_text()
         subprocess.run([str(interpreter), '-c', contracts_program], cwd=root, env=env, check=True)
         skills_program = Path(__file__).with_name("check_installed_skills.py").read_text()

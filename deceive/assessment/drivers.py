@@ -5,6 +5,7 @@ import base64
 from contextlib import AsyncExitStack
 from importlib.metadata import entry_points
 import json
+import time
 import ssl
 from typing import Protocol
 import uuid
@@ -38,6 +39,8 @@ class SSHDriver:
         return [("tcp", listener["port"])]
 
     async def execute(self, endpoint: dict, action: ProbeAction, key: tuple) -> dict:
+        if action.operation == 'terminal':
+            return await self.terminal(endpoint, action, key)
         if action.operation == "close":
             session = self.sessions.pop(key, None)
             if session:
@@ -62,6 +65,12 @@ class SSHDriver:
             raise ValueError("SSH operations: authenticate, exec, commands, close")
         p = action.parameters
         commands = p.get("commands", [p.get("command", "hostname")])
+        continuations = p.get('continuation_prompts', [])
+        if not isinstance(continuations, list) or len(continuations) > 16 or any(
+            not isinstance(value, str) or not 1 <= len(value.encode()) <= 256
+            for value in continuations
+        ):
+            raise ValueError('Supply at most 16 bounded literal continuation prompts')
         if not isinstance(commands, list) or not 1 <= len(commands) <= 30 or not all(
             isinstance(c, str) and "\n" not in c and "\r" not in c and len(c.encode()) <= 16384
             for c in commands
@@ -74,12 +83,13 @@ class SSHDriver:
             connection = await asyncssh.connect("127.0.0.1", port=endpoint["ports"]["tcp"]["host"],
                 username=p.get("username", endpoint.get("username", "guest")),
                 password=p.get("password", endpoint.get("password", "")), known_hosts=None,
-                encoding=None)
+                encoding=None, client_version='DECEIVE-assessment-' + uuid.uuid4().hex)
             session = {"connection": connection, "id": "client-" + uuid.uuid4().hex,
                        "banner": b"", "shell": None}
             if interactive:
                 try:
-                    session["shell"] = await ShellClient.open(connection, endpoint.get("timeout", 35))
+                    session["shell"] = await ShellClient.open(connection, endpoint.get("timeout", 35),
+                        continuation_prompts=tuple(value.encode() for value in continuations))
                     session["banner"] = session["shell"].banner
                     self.sessions[key] = session
                 except BaseException:
@@ -109,12 +119,123 @@ class SSHDriver:
                     "body_base64": outputs[-1]["body_base64"], "facts": {
                         "outputs": outputs, "banner_base64": encode(session["banner"]),
                         "server_version": connection.get_extra_info("server_version"),
+                        "client_version": connection.get_extra_info("client_version"),
                         "source_port": connection.get_extra_info("sockname")[1]}}
         finally:
             if ephemeral or key not in self.sessions:
                 self.sessions.pop(key, None)
                 connection.close()
                 await connection.wait_closed()
+
+    async def terminal(self, endpoint: dict, action: ProbeAction, key: tuple) -> dict:
+        """Capture real terminal screens without server markers or internal state."""
+        try:
+            import pyte
+            from deceive.terminal_client import Screen
+        except ImportError:
+            raise ValueError('Terminal observations require deceive[assessment]') from None
+        p = action.parameters
+        events = p.get('events', [])
+        if not action.session or not isinstance(events, list) or len(events) > 64:
+            raise ValueError('Terminal actions require a named session and at most 64 events')
+        if sum(len(json.dumps(event)) for event in events) > 16384:
+            raise ValueError('Terminal action exceeds input limit')
+        for event in events:
+            if not isinstance(event, dict) or set(event) - {'send', 'resize', 'wait'}:
+                raise ValueError('Terminal events support send, resize and literal wait')
+            if 'send' in event and not isinstance(event['send'], str):
+                raise ValueError('Terminal send must be text')
+            if 'resize' in event:
+                size = event['resize']
+                if not isinstance(size, list) or len(size) != 2 or not all(type(v) is int for v in size):
+                    raise ValueError('Terminal resize needs [columns, rows]')
+                if not 20 <= size[0] <= 240 or not 5 <= size[1] <= 100:
+                    raise ValueError('Terminal resize exceeds bounds')
+        for item in [p] + events:
+            if 'wait' in item and (not isinstance(item['wait'], str) or not 1 <= len(item['wait']) <= 256):
+                raise ValueError('Supply a bounded literal terminal wait')
+        session = self.sessions.get(key)
+        if session and session.get('screen') is None:
+            raise ValueError('Use a distinct session for raw terminal observations')
+        started = time.monotonic()
+        if not session:
+            connection = await asyncssh.connect('127.0.0.1', port=endpoint['ports']['tcp']['host'],
+                username=p.get('username', endpoint.get('username', 'guest')),
+                password=p.get('password', endpoint.get('password', '')), known_hosts=None,
+                encoding=None, client_version='DECEIVE-assessment-' + uuid.uuid4().hex)
+            try:
+                process = await connection.create_process(term_type=p.get('term', 'xterm'),
+                    term_size=(80, 24), term_modes={asyncssh.PTY_ECHO: 1, asyncssh.PTY_ONLCR: 1})
+            except BaseException:
+                connection.close()
+                await connection.wait_closed()
+                raise
+            screen = Screen(80,24)
+            session = {'connection': connection, 'process': process, 'screen': screen,
+                       'stream': pyte.ByteStream(screen), 'id': 'client-' + uuid.uuid4().hex}
+            self.sessions[key] = session
+        process = session['process']
+        captures = []
+
+        async def capture(wait: str | None = None, observed: bytes = b'') -> bytes:
+            raw = bytearray()
+            if wait is not None:
+                if not isinstance(wait, str) or not 1 <= len(wait) <= 256:
+                    raise ValueError('Supply a bounded literal terminal wait')
+                async with asyncio.timeout(endpoint.get('timeout', 35)):
+                    while wait.encode() not in observed + raw:
+                        data = await process.stdout.read(4096)
+                        if not data:
+                            raise asyncio.IncompleteReadError(bytes(raw), len(wait.encode()))
+                        raw.extend(data)
+                        if len(raw) > 1048576:
+                            raise ValueError('Terminal observation exceeds 1 MiB')
+            while True:
+                try:
+                    data = await asyncio.wait_for(process.stdout.read(4096), .05)
+                except TimeoutError:
+                    break
+                if not data:
+                    break
+                raw.extend(data)
+                if len(raw) > 1048576:
+                    raise ValueError('Terminal observation exceeds 1 MiB')
+            session['stream'].feed(bytes(raw))
+            return bytes(raw)
+
+        initial = await capture(p.get('wait'))
+        if initial:
+            captures.append({'raw_base64': encode(initial)})
+        observed = initial
+        for event in events:
+            if not isinstance(event, dict) or set(event) - {'send', 'resize', 'wait'}:
+                raise ValueError('Terminal events support send, resize and literal wait')
+            if 'resize' in event:
+                observed = b''
+                size = event['resize']
+                if not isinstance(size, list) or len(size) != 2 or not all(type(v) is int for v in size):
+                    raise ValueError('Terminal resize needs [columns, rows]')
+                cols, rows = size
+                if not 20 <= cols <= 240 or not 5 <= rows <= 100:
+                    raise ValueError('Terminal resize exceeds bounds')
+                process.change_terminal_size(cols, rows)
+                session['screen'].resize(rows, cols)
+            if 'send' in event:
+                observed = b''
+                if not isinstance(event['send'], str):
+                    raise ValueError('Terminal send must be text')
+                process.stdin.write(event['send'].encode())
+            raw = await capture(event.get('wait'), observed)
+            observed += raw
+            captures.append({'input': event, 'raw_base64': encode(raw)})
+        screen = session['screen']
+        return {'version':'ssh', 'session_id':session['id'], 'facts':{
+            'terminal': captures, 'screen': screen.display,
+            'cursor': {'row':screen.cursor.y, 'column':screen.cursor.x},
+            'seconds': time.monotonic() - started,
+            'source_port': session['connection'].get_extra_info('sockname')[1],
+            'client_version': session['connection'].get_extra_info('client_version'),
+            'exit_status': process.exit_status}}
 
     async def close(self) -> None:
         for session in self.sessions.values():

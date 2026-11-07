@@ -276,7 +276,7 @@ async def _sequence(runtime: Runtime, listener: Listener, case: Case, version: s
                     value = await connection.run(step.command, check=False, timeout=timeout)
                     exit_status, stderr = value.exit_status, value.stderr
                     result = HTTPResult(200, value.stdout, [], "ssh")
-                    # The SSH adapter deliberately permits one process per connection.
+                    # A new exec channel receives a fresh private overlay.
                     client = None
             else:
                 body = base64.b64decode(step.body_base64, validate=True) if step.body_base64 else step.body.encode()
@@ -289,7 +289,8 @@ async def _sequence(runtime: Runtime, listener: Listener, case: Case, version: s
                     result = HTTPResult(response.status_code, response.content, list(response.headers.raw), actual)
                 if result.version != version:
                     raise ValueError(f"Protocol fallback: expected HTTP/{version}, got {result.version}")
-            sessions = [s for s in runtime.sessions.values() if s.listener == listener.name]
+            sessions = [s for s in (runtime.channels.values() if listener.protocol == 'ssh' else runtime.sessions.values())
+                        if s.listener == listener.name]
             if listener.protocol == "ssh" and connection:
                 port = connection.get_extra_info("sockname")[1]
                 sessions = [s for s in sessions if s.context["src_port"] == port]

@@ -154,6 +154,42 @@ asyncio.run(run())
     measurements['contracts'] = json.loads(docker(
         'run', '--rm', '--platform', 'linux/' + architecture, '--network', 'none',
         '--entrypoint', 'python', image, '-c', contracts_program))
+    preflight_program = Path(__file__).with_name('check_provider_preflight.py').read_text()
+    measurements['provider_preflight'] = json.loads(docker(
+        'run', '--rm', '--platform', 'linux/' + architecture, '--network', 'none',
+        '--entrypoint', 'python', image, '-c', preflight_program))
+    applications_program = Path(__file__).with_name('check_device_applications.py').read_text()
+    measurements['device_applications'] = json.loads(docker(
+        'run', '--rm', '--platform', 'linux/' + architecture, '--network', 'none',
+        '--entrypoint', 'python', image, '-c', applications_program))
+    # OpenSSH runs on the CI host; the runtime image needs no client binary.
+    from importlib.resources import files
+    import yaml
+    from deceive.device.journeys import run_openssh
+    journeys = yaml.safe_load(files('deceive').joinpath('journeys/devices.yaml').read_text())['journeys']
+    measurements['device_journeys'] = []
+    for profile_id in sorted({j['profile'] for j in journeys}):
+        name = token + '-device-' + uuid.uuid4().hex[:6]
+        docker('run', '-d', '--name', name, '-p', '127.0.0.1::8022/tcp',
+               image, 'serve', '--profile', profile_id)
+        try:
+            for _ in range(100):
+                ready = subprocess.run(['docker', 'exec', name, 'deceive', 'healthcheck'],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                if ready.returncode == 0:
+                    break
+                await asyncio.sleep(.1)
+            else:
+                raise AssertionError('Device container did not become ready')
+            ports = json.loads(docker('inspect', name))[0]['NetworkSettings']['Ports']
+            port = int(ports['8022/tcp'][0]['HostPort'])
+            for journey in journeys:
+                if journey['profile'] == profile_id:
+                    result = await asyncio.to_thread(run_openssh, port, journey)
+                    result.pop('transcript')
+                    measurements['device_journeys'].append(result)
+        finally:
+            subprocess.run(['docker', 'rm', '-f', name], stdout=subprocess.DEVNULL, check=False)
     # Containerd may report only compressed content before a foreign-platform
     # image's first run. Measure after unpacking for comparable stored sizes.
     measurements["image_bytes"] = int(docker("image", "inspect", image, "--format", "{{.Size}}"))
@@ -166,6 +202,7 @@ def main() -> None:
     parser.add_argument("--report", type=Path, default=Path("container-measurements.json"))
     args = parser.parse_args()
     result = asyncio.run(verify(args.image))
+    args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result))
 

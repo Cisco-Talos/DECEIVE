@@ -18,7 +18,8 @@ from deceive.assessment.models import Spec, Target
 from deceive.config import fingerprint, load_deployment, load_profile, read_yaml, relative_path
 from deceive.models import Deception, Deployment
 
-CLIENT_FILES = {"deceive/clients.py", "deceive/evaluate.py", "deceive/catalog.py", "deceive/managed.py"}
+CLIENT_FILES = {"deceive/clients.py", "deceive/terminal_client.py", "deceive/evaluate.py",
+                "deceive/catalog.py", "deceive/managed.py"}
 
 
 def now() -> str:
@@ -54,7 +55,12 @@ def git(root: Path, *args: str) -> str:
 
 
 def resolve_spec(path: Path) -> Spec:
-    spec = Spec.model_validate(read_yaml(path))
+    from deceive.provider_config import resolve_provider_settings
+    raw = resolve_provider_settings(read_yaml(path), path.resolve().parent)
+    for target in raw.get('targets', []):
+        if not target.get('deployment') and 'provider' not in target and raw.get('default_provider'):
+            target['provider'] = raw['default_provider']
+    spec = Spec.model_validate(raw)
     base = path.resolve().parent
     if spec.docker.aws_dir is not None:
         spec.docker.aws_dir = relative_path(base, spec.docker.aws_dir)
@@ -67,6 +73,8 @@ def resolve_spec(path: Path) -> Spec:
                            "/" in ref or ref.endswith((".yaml", ".yml")) else ref
                            for ref in target.profiles]
     for provider in spec.providers.values():
+        if provider.env_file:
+            provider.env_file = relative_path(base, provider.env_file)
         if provider.api_key_file:
             provider.api_key_file = relative_path(base, provider.api_key_file)
     if spec.all_profiles:
@@ -93,12 +101,14 @@ def source_files(root: Path) -> list[Path]:
     names = {"pyproject.toml", "uv.lock", "Dockerfile", ".dockerignore", "README.md", "LICENSE", "hatch_build.py"}
     assets = list((root / "docs").glob("*.md")) + list((root / "examples").glob("*.yaml"))
     assets += list((root / "examples/profiles").glob("*.yaml"))
-    assets = [p for p in assets if not p.name.startswith(".")]
+    assets = [p for p in assets if not p.name.startswith(".")
+              and not p.name.endswith('.local.yaml')]
     return sorted([p for p in root.iterdir() if p.is_file() and p.name in names] + assets + [
         p for folder in ("deceive", "tests", "skills")
         for p in (root / folder).rglob("*") if p.is_file() and
         "__pycache__" not in p.parts and p.suffix not in {".pyc", ".key", ".pem"}
         and not p.name.endswith("_host_key")
+        and not p.name.endswith('.local.yaml')
         and not any(part.startswith(".") for part in p.relative_to(root).parts)])
 
 
@@ -141,6 +151,15 @@ def prepare(spec_path: Path, run: Path, root: Path) -> dict:
     run.chmod(0o700)
     baseline = run / "baseline"
     baseline.mkdir()
+    for index, provider in enumerate(spec.providers.values()):
+        if provider.api_key is not None:
+            material = run / '.secrets'
+            material.mkdir(mode=0o700, exist_ok=True)
+            key_file = material / f'provider-{index}'
+            descriptor = os.open(key_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            with os.fdopen(descriptor, 'w') as stream:
+                stream.write(provider.api_key.get_secret_value())
+            provider.api_key_file, provider.api_key = key_file.resolve(), None
     source = checkpoint(root, baseline)
     state = {"schema_version": 1, "run_id": "assess-" + uuid.uuid4().hex[:12],
              "created": now(), "started_epoch": time.time(), "root": str(root.resolve()),

@@ -30,7 +30,7 @@ def check_plan(target: Target, entry: dict, role: str, actions: list[ProbeAction
             errors.append(f'Action {index + 1}: unknown or ambiguous service')
             continue
         params = action.parameters
-        supported = {'ssh': {'authenticate','exec','commands','close'},
+        supported = {'ssh': {'authenticate','exec','commands','terminal','close'},
                      'http': {'request','close','h2_method','h2_resets','h3_fin'},
                      'https': {'request','close','h2_method','h2_resets','h3_fin'}}
         if endpoint['protocol'] in supported and action.operation not in supported[endpoint['protocol']]:

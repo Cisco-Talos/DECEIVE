@@ -10,6 +10,8 @@ Read the project's `docs/profiles.md` and relevant built-in profile examples. Us
 reports are the authoritative implementation interface.
 
 For schema version 2 authoring, read the relevant supporting guides:
+- [Whole-device SSH sessions](../../docs/device-sessions.md) for platform packs,
+  terminal applications, private channel state and validated model effects.
 - [Research and realism criteria](references/research.md) before defining behavior or acceptance.
 - [Defaults, organizations and instances](references/organizations.md) for reusable customization.
 - [HTTP contracts](references/http-contracts.md) for required requests, responses and command endpoints.

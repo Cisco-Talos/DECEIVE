@@ -32,6 +32,7 @@ async def test_generated_exec_preserves_stream_bytes_status_and_model_log(runtim
     async with await connect(runtime) as connection:
         result = await connection.run("generated-command", check=False)
     assert (result.stdout, result.stderr, result.exit_status) == (stdout, stderr, code)
+    await asyncio.sleep(.05)  # Summaries are connection-owned, after channel closure.
     records = [json.loads(line) for line in runtime.test_stream.getvalue().splitlines()]
     response = next(r for r in records if r["message"] == "LLM response")
     assert base64.b64decode(response["details"]) == raw.encode()
@@ -86,6 +87,7 @@ async def test_invalid_generated_shell_reply_fails_without_exposing_wrapper(runt
     assert result.exit_status == 1 and result.stdout == b""
     assert result.stderr == b"Session unavailable.\n"
     assert b"private-marker" not in result.stdout + result.stderr
+    await asyncio.sleep(.05)  # Summaries are connection-owned, after channel closure.
     records = [json.loads(line) for line in runtime.test_stream.getvalue().splitlines()]
     failed = [r for r in records if r["message"] == "LLM response"]
     assert len(failed) == 1 and failed[0]["ssh_response_error"] == "invalid_format"
@@ -110,6 +112,7 @@ async def test_rejected_model_reply_records_attempt_and_actual_failure(runtime_f
             result = await connection.run("generated-command", check=False)
             body, stderr, status = result.stdout, result.stderr, result.exit_status
     await asyncio.sleep(0)
+    await asyncio.sleep(.05)  # Summaries are connection-owned, after channel closure.
     records = [json.loads(line) for line in runtime.test_stream.getvalue().splitlines()]
     attempted = [r for r in records if r.get("response_stage") == "attempt"]
     final = [r for r in records if r.get("response_stage") == "final"]
@@ -137,6 +140,7 @@ async def test_single_json_envelope_preserves_raw_model_and_wire_bytes(runtime_f
     async with await connect(runtime) as connection:
         result = await connection.run("generated-command", check=False)
     assert (result.stdout, result.stderr, result.exit_status) == (b"plain", b"error\n", 7)
+    await asyncio.sleep(.05)  # Summaries are connection-owned, after channel closure.
     records = [json.loads(line) for line in runtime.test_stream.getvalue().splitlines()]
     response = next(r for r in records if r["message"] == "LLM response")
     assert base64.b64decode(response["details"]).decode() == raw

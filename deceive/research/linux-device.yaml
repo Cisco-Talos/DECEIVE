@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "profile_id": "linux-device",
+  "version": "1",
+  "subject": "Ubuntu 22.04.5 LTS whole-device sessions",
+  "kind": "real_product",
+  "sources": [
+    {
+      "id": "platform",
+      "kind": "vendor",
+      "title": "Bash shell grammar",
+      "url": "https://www.gnu.org/software/bash/manual/html_node/Shell-Syntax.html",
+      "retrieved": "2026-11-06",
+      "facts": [
+        "Platform-specific interpreter conventions must inform prompts, ordinary commands, and interaction modes."
+      ],
+      "limitations": [
+        "Documentation is not a captured reference session and does not establish exact release fidelity."
+      ]
+    },
+    {
+      "id": "terminal",
+      "kind": "standard",
+      "title": "SSH Connection Protocol",
+      "url": "https://www.rfc-editor.org/rfc/rfc4254.html",
+      "retrieved": "2026-11-06",
+      "facts": [
+        "PTY, resize, data streams, signals and channel lifecycle are distinct protocol operations."
+      ]
+    },
+    {
+      "id": "design",
+      "kind": "design",
+      "title": "DECEIVE bounded device design",
+      "retrieved": "2026-11-06",
+      "facts": [
+        "Names, files, process inventory, menu fixture and supported application subsets are authored design facts."
+      ]
+    }
+  ],
+  "criteria": [
+    {
+      "id": "session-consistency",
+      "roles": [
+        "protocol",
+        "product",
+        "attacker",
+        "consistency"
+      ],
+      "sources": [
+        "platform",
+        "terminal",
+        "design"
+      ],
+      "expectation": "Interaction follows the selected platform and remains consistent across terminal, applications and command discovery.",
+      "comparisons": [
+        "Compare mode transitions, command errors, prompts and state follow-ups against platform references, keeping authored fixture facts separate."
+      ],
+      "limitations": [
+        "A finite deterministic journey cannot establish open-ended model realism."
+      ]
+    }
+  ],
+  "unknowns": [
+    "Live-model behavior is unassessed until a credentialed research-v4 loop completes.",
+    "Complete platform command and application compatibility is outside the bounded manifest."
+  ]
+}

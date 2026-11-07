@@ -55,7 +55,7 @@ def main() -> None:
             "deceptions": [{"profile": "one.yaml"}]}))
         flags = ["--config", str(path), "--deception", str(root / "two.yaml")]
         with redirect_stdout(io.StringIO()):
-            assert cli(["config", "validate", *flags]) == 0
+            assert cli(["config", "validate", "--offline", *flags]) == 0
         assert not (root / "data").exists() and not (root / "unused.jsonl").exists()
         print(json.dumps(asyncio.run(exercise(flags))))
 

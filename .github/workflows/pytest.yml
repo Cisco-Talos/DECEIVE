@@ -37,5 +37,8 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --all-extras --python ${{ matrix.python-version }}
 
+      - name: Require real SSH client
+        run: command -v ssh
+
       - name: Run tests
         run: uv run --frozen --all-extras --python ${{ matrix.python-version }} pytest

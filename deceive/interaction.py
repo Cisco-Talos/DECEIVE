@@ -22,6 +22,7 @@ class Interaction:
     headers: tuple[tuple[bytes, bytes], ...] = ()
     http_version: str = ""
     request_id: str = field(default_factory=lambda: f"request-{uuid.uuid4()}")
+    component: bool = False
 
 
 @dataclass
@@ -36,6 +37,9 @@ class Response:
     transition: dict[str, str] = field(default_factory=dict)
     stderr: bytes = b""
     model_output: str | None = None
+    effects: dict = field(default_factory=dict)
+    dialogue: dict | None = None
+    chunks: list[tuple[str, bytes]] = field(default_factory=list)
 
 
 @dataclass
@@ -57,6 +61,9 @@ class Session:
     virtual_files: dict[str, bytes] = field(default_factory=dict)
     virtual_directories: set[str] = field(default_factory=set)
     removed_files: set[str] = field(default_factory=set)
+    device: object = None
+    parent: object = None
+    generation: int = 0
 
 
 API_VERSION = 1

@@ -1,0 +1,75 @@
+{
+  "schema_version": 2,
+  "id": "freebsd-device",
+  "version": "1",
+  "protocol": "ssh",
+  "description": "Bounded whole-device FreeBSD 14.0-RELEASE session with private virtual state.",
+  "requirements": {
+    "protocol": "ssh",
+    "preferred_port": 8022,
+    "capabilities": [
+      "ssh.commands",
+      "ssh.device",
+      "ssh.fullscreen"
+    ]
+  },
+  "device": {
+    "platform": "freebsd",
+    "interpreter": "sh",
+    "model_effects": true,
+    "applications": [
+      "less",
+      "top",
+      "vi",
+      "device-menu"
+    ]
+  },
+  "identity": {
+    "hostname": "storage-bsd-01",
+    "os": "FreeBSD 14.0-RELEASE",
+    "kernel": "14.0-RELEASE",
+    "architecture": "amd64",
+    "username": "guest",
+    "uid": 1000,
+    "ssh_version": "OpenSSH_9.3",
+    "banner": "FreeBSD 14.0-RELEASE\nAuthorized access only."
+  },
+  "files": {
+    "/etc/hostname": "storage-bsd-01\n",
+    "/home/guest/README.txt": "Device workspace\nUse help to discover commands.\n",
+    "/home/guest/notes.txt": "alpha\nbeta\ngamma\n",
+    "/etc/passwd": "guest:x:1000:1000:Guest:/home/guest:/bin/sh\n"
+  },
+  "behaviors": [
+    {
+      "id": "files",
+      "kind": "virtual_files",
+      "options": {
+        "directories": [
+          "/tmp",
+          "/var/tmp",
+          "/home/guest"
+        ]
+      }
+    },
+    {
+      "id": "identity",
+      "kind": "identity"
+    }
+  ],
+  "fallback": "llm_if_available",
+  "fallback_reply": {
+    "stderr": "sh: command not found\n",
+    "exit_status": 127
+  },
+  "ssh_response_format": "json",
+  "prompt": "Simulate only the selected platform and current interaction. Authoritative device facts and private state take precedence. Propose virtual effects explicitly; never invent lasting effects absent from state.",
+  "references": [
+    "https://docs.freebsd.org/en/articles/linux-users/"
+  ],
+  "limitations": [
+    "Bounded interpreter and application subsets; no real programs execute.",
+    "Reference contents and naming are fictional design fixtures.",
+    "Real-model realism requires credentialed online assessment; offline tests do not qualify it."
+  ]
+}

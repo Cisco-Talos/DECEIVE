@@ -1,0 +1,51 @@
+# Copy to ignored assessment.local.yaml, select your targets/provider and expand
+# frozen workflow coverage/calibration before requesting qualification.
+# This template is not a prequalified assessment or a personal provider config.
+schema_version: 2
+review_rubric: research-v4
+require_live_model: true
+providers:
+  evaluation:
+    kind: openai
+    model: YOUR_MODEL
+    api_key_env: DECEIVE_TEST_API_KEY
+    temperature: null
+docker:
+  build: true
+  provider_network: true
+policy:
+  mode: until
+  max_loops: 20
+  confirmations: 2
+limits:
+  max_elapsed_seconds: 7200
+targets:
+  - name: device-under-test
+    profiles: [linux-device] # public example; select your own profile or deployment
+    provider: evaluation
+    claims: >-
+      A bounded private device session, including ordinary commands, nested
+      interpreters, full-screen applications and validated model fallback.
+      Compare independent platform research; do not infer realism from contracts.
+    coverage:
+      - id: discovery
+        role: product
+        criterion: identity_version
+        kind: baseline
+        description: Compare identity across ordinary discovery and the terminal.
+        steps:
+          - select:
+              - {field: action.operation, equals: commands}
+            expect:
+              - {field: facts.outputs, exists: true}
+      - id: screen-lifecycle
+        role: protocol
+        criterion: wire_fidelity
+        kind: positive
+        description: Enter a terminal application, resize it, and inspect public screen/cursor evidence.
+        steps:
+          - select:
+              - {field: action.operation, equals: terminal}
+            expect:
+              - {field: facts.screen, exists: true}
+              - {field: facts.cursor, exists: true}

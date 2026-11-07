@@ -18,6 +18,8 @@ class SkillAssetsHook(BuildHookInterface):
         paths += list((root / 'examples/profiles').glob('*.yaml'))
         paths += [root / 'README.md', root / 'LICENSE']
         for path in paths:
+            if path.name.endswith('.local.yaml'):
+                continue
             if path.is_symlink():
                 raise ValueError('Skill assets must not be symlinks')
             relative = path.relative_to(root).as_posix()

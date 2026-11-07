@@ -34,16 +34,22 @@ class Provider(Protocol):
 
 
 def _secret(config: ProviderConfig) -> str | None:
+    from deceive.credentials import provider_environment
     if config.api_key_file:
         value = config.api_key_file.read_text().strip()
         if not value:
             raise ValueError("Configured secret file is empty")
         return value
+    if config.api_key is not None:
+        return config.api_key.get_secret_value()
+    environment = provider_environment(config, 'native')
     if config.api_key_env:
-        value = os.environ.get(config.api_key_env)
+        value = environment.get(config.api_key_env)
         if not value:
             raise ValueError(f"Set credential environment variable {config.api_key_env}")
         return value
+    if config.kind != 'bedrock':
+        return next(iter(environment.values()), None)
     return None
 
 
@@ -104,7 +110,19 @@ class SDKProvider:
             from botocore.exceptions import BotoCoreError, ClientError
 
             self.errors += (BotoCoreError, ClientError)
-            session = sdk.Session(profile_name=config.aws_profile, region_name=config.region)
+            from deceive.credentials import provider_environment
+            environment = provider_environment(config, 'native')
+            credential_options = {}
+            if config.aws_profile is None:
+                for variable, option in [('AWS_ACCESS_KEY_ID', 'aws_access_key_id'),
+                                         ('AWS_SECRET_ACCESS_KEY', 'aws_secret_access_key'),
+                                         ('AWS_SESSION_TOKEN', 'aws_session_token')]:
+                    if variable in environment:
+                        credential_options[option] = environment[variable]
+            session = sdk.Session(profile_name=config.aws_profile or environment.get('AWS_PROFILE')
+                                  or environment.get('AWS_DEFAULT_PROFILE'),
+                                  region_name=config.region or environment.get('AWS_REGION')
+                                  or environment.get('AWS_DEFAULT_REGION'), **credential_options)
             self.client = session.client(
                 "bedrock-runtime", endpoint_url=config.endpoint, verify=config.tls_verify,
                 config=Config(

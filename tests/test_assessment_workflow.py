@@ -133,6 +133,25 @@ def test_ssh_authentication_can_be_preflighted_as_an_assessment_action():
     assert check_plan(target, entry, 'product', actions, limit=10, reserve=2)['ready']
 
 
+def test_ssh_terminal_lifecycle_can_be_planned_without_response_answers():
+    from deceive.assessment.workflow import check_plan
+    goal = CoverageGoal.model_validate({
+        'id': 'editor', 'role': 'protocol', 'criterion': 'wire_fidelity',
+        'kind': 'positive', 'description': 'Enter an editor and resize the terminal',
+        'steps': [{'select': [
+            {'field': 'action.operation', 'equals': 'terminal'},
+            {'field': 'action.parameters.events.0.send', 'equals': 'vi notes.txt\r'},
+        ], 'expect': [{'field': 'facts.screen.0', 'contains': 'PRIVATE EXPECTATION'}]}],
+    })
+    target = Target(name='device', profiles=['linux-device'], coverage=[goal])
+    entry = {'endpoints': [{'id': 'service-1', 'protocol': 'ssh', 'versions': []}]}
+    actions = [ProbeAction(operation='terminal', session='screen', parameters={
+        'events': [{'send': 'vi notes.txt\r'}, {'resize': [100, 30]}]})]
+    result = check_plan(target, entry, 'protocol', actions, limit=10, reserve=2)
+    assert result['ready'], result
+    assert 'PRIVATE EXPECTATION' not in str(result)
+
+
 def test_new_specs_default_to_audited_workflow_and_explicit_legacy_is_preserved():
     target=Target(name='demo',profiles=['demo-http'])
     assert Spec(targets=[target]).schema_version==2

@@ -9,6 +9,84 @@ from deceive.config import load_profile
 from deceive.evaluate import evaluate_external
 
 
+@pytest.mark.asyncio
+async def test_driver_declared_password_continuations_preserve_dialogue(runtime_factory):
+    runtime = await runtime_factory('ssh', profile=load_profile('ios-device'))
+    driver = Drivers()
+    target = endpoint(runtime, 'ssh', [])
+    target['timeout'] = .4
+    try:
+        result = await driver.execute(target, ProbeAction(operation='commands', session='dialogue',
+            parameters={'continuation_prompts': ['Password: '], 'commands': [
+                'en', 'bad', 'enable', 'fixture-enable', 'show running-config']}), ('dialogue',))
+        outputs = result['facts']['outputs']
+        assert len(outputs) == 5
+        assert base64.b64decode(outputs[0]['prompt_base64']) == b'Password: '
+        assert base64.b64decode(outputs[2]['prompt_base64']) == b'Password: '
+        assert b'fixture-enable' not in base64.b64decode(outputs[3]['raw_base64'])
+        assert b'hostname edge-router-01' in base64.b64decode(outputs[4]['body_base64'])
+    finally:
+        await driver.close()
+
+
+@pytest.mark.asyncio
+async def test_terminal_wait_uses_output_drained_in_same_observation(runtime_factory):
+    import asyncio
+    import json
+    from deceive.providers import ModelResult
+    runtime = await runtime_factory('ssh', profile=load_profile('linux-device'), model=True)
+    delivered = asyncio.Event()
+    async def delayed(messages):
+        await asyncio.sleep(.15)
+        delivered.set()
+        return ModelResult(json.dumps({'stdout':'READY\n','exit_status':0}))
+    runtime.test_provider.complete = delayed
+    driver = Drivers()
+    target = endpoint(runtime, 'ssh', [])
+    target['timeout'] = .3
+    key = ('wait-race',)
+    try:
+        await driver.execute(target, ProbeAction(operation='terminal', session='screen',
+            parameters={'events':[{'send':'uptime\r'}]}), key)
+        await asyncio.wait_for(delivered.wait(), 1)
+        await asyncio.sleep(.03)
+        result = await driver.execute(target, ProbeAction(operation='terminal', session='screen',
+            parameters={'events':[{'wait':'guest@build-node-03:~$ '}]}), key)
+        raw = b''.join(base64.b64decode(c['raw_base64']) for c in result['facts']['terminal'])
+        assert raw.count(b'READY') == 1
+        assert raw.count(b'guest@build-node-03:~$ ') == 1
+    finally:
+        await driver.close()
+
+
+@pytest.mark.asyncio
+async def test_terminal_literal_wait_matches_across_drained_fragments():
+    import asyncio
+    import asyncssh
+    class Server(asyncssh.SSHServer):
+        def begin_auth(self, username):
+            return False
+    async def handle(process):
+        process.stdout.write(b'RE')
+        await asyncio.sleep(.12)
+        process.stdout.write(b'ADY> ')
+        await process.stdin.read()
+    server = await asyncssh.create_server(Server, '127.0.0.1', 0,
+        server_host_keys=[asyncssh.generate_private_key('ssh-ed25519')],
+        process_factory=handle, encoding=None)
+    driver = Drivers()
+    target = {'protocol':'ssh','ports':{'tcp':{'host':server.get_port()}},'timeout':.4}
+    try:
+        result = await driver.execute(target, ProbeAction(operation='terminal',session='fragments',
+            parameters={'events':[{'wait':'READY> '}]}), ('fragments',))
+        raw = b''.join(base64.b64decode(c['raw_base64']) for c in result['facts']['terminal'])
+        assert raw == b'READY> '
+    finally:
+        await driver.close()
+        server.close()
+        await server.wait_closed()
+
+
 def endpoint(runtime, protocol, versions):
     endpoints = next(iter(runtime.servers.values())).endpoints
     return {"protocol": protocol, "versions": versions, "ports": {
@@ -116,3 +194,28 @@ async def test_named_http3_client_reconnects_without_losing_cookie_state(runtime
         assert result["session_id"] == first["session_id"] and result["facts"]["transport_reconnected"]
     finally:
         await driver.close()
+
+
+@pytest.mark.asyncio
+async def test_terminal_screen_driver_and_wire_audit(runtime_factory):
+    from deceive.assessment.telemetry import audit
+    import json
+    runtime=await runtime_factory('ssh',profile=load_profile('linux-device'))
+    drivers=Drivers(); target=endpoint(runtime,'ssh',['1.1']); key=('screen',)
+    action=ProbeAction(operation='terminal',session='screen',parameters={
+        'wait':'$ ', 'events':[{'send':'top\r','wait':'q quit | s delay'},
+                              {'resize':[100,30]}]})
+    try:
+        result=await drivers.execute(target,action,key)
+        assert 'worker' in '\n'.join(result['facts']['screen'])
+        assert len(result['facts']['screen'])==30
+        await drivers.execute(target,ProbeAction(operation='terminal',session='screen',parameters={
+            'events':[{'send':'q','wait':'$ '}]}),key)
+    finally:
+        await drivers.close()
+    import asyncio
+    await asyncio.sleep(.05)
+    records=[json.loads(line) for line in runtime.test_stream.getvalue().splitlines()]
+    observation=result|{'protocol':'ssh','action':action.model_dump()}
+    assert audit(records,[observation],{'linux-device'})['status']=='passed'
+    assert audit(records,[observation,observation],{'linux-device'})['status']=='failed'

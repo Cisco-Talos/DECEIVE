@@ -202,6 +202,7 @@ async def test_input_limit_and_idle_timeout(runtime_factory):
     async with await connect(runtime) as connection:
         process = await connection.create_process(term_type="xterm")
         await asyncio.wait_for(process.wait_closed(), 2)
+    await asyncio.sleep(.05)
     assert not runtime.sessions
 
 
@@ -210,4 +211,5 @@ async def test_idle_connection_without_channel_is_closed(runtime_factory):
     runtime = await runtime_factory("ssh", limits={"idle_seconds": 0.1})
     connection = await connect(runtime)
     await asyncio.wait_for(connection.wait_closed(), 1)
+    await asyncio.sleep(.05)
     assert not runtime.sessions

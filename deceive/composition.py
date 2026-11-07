@@ -10,7 +10,7 @@ from deceive.models import Behavior, CommandEnvironment, Contract, Deployment, L
 
 
 CAPABILITIES = {
-    "ssh": {"ssh.commands", "ssh.structured_responses", "ssh.auth_policy"},
+    "ssh": {"ssh.commands", "ssh.structured_responses", "ssh.auth_policy", "ssh.device", "ssh.fullscreen"},
     "http": {"http.requests", "http.raw_path", "http.binary_body", "http.duplicate_headers",
              "http.sessions"},
     "https": {"http.requests", "http.raw_path", "http.binary_body", "http.duplicate_headers",
@@ -179,7 +179,7 @@ def _compose(members: list[Profile]) -> tuple[Profile, dict[str, Profile]]:
             if result.prompt and result.prompt != profile.prompt:
                 raise ValueError(f"Profile {profile.id} conflicts with another prompt; use a common base prompt")
             result.prompt = profile.prompt
-        for key in ("fallback", "fallback_reply", "cookie_name", "ssh_response_format", "ssh_auth"):
+        for key in ("fallback", "fallback_reply", "cookie_name", "ssh_response_format", "ssh_auth", "device"):
             if key in profile.model_fields_set and getattr(profile, key) != getattr(base, key):
                 raise ValueError(f"Profile {profile.id} conflicts with base {base.id}: {key}")
         result.stateful |= profile.stateful

@@ -116,7 +116,8 @@ def fingerprint(model: Profile | dict | list) -> str:
 
 
 def load_deployment(path: Path, *, additional_profiles: list[str] | None = None) -> Deployment:
-    raw = read_yaml(path)
+    from deceive.provider_config import resolve_provider_settings
+    raw = resolve_provider_settings(read_yaml(path), path.resolve().parent)
     if additional_profiles:
         selections = raw.get("deceptions", [])
         if not isinstance(selections, list):

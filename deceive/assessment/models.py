@@ -155,12 +155,17 @@ class Spec(Model):
     limits: ProbeLimits = Field(default_factory=ProbeLimits)
     docker: DockerSettings = Field(default_factory=DockerSettings)
     providers: dict[str, ProviderConfig] = Field(default_factory=dict)
+    default_provider: str | None = None
     drivers: list[str] = Field(default_factory=list)
     roles: list[Role] = Field(default_factory=lambda: list(ROLES))
     review_rubric: Literal["legacy-v1", "evidence-v2", 'evidence-v3', 'research-v4'] = 'research-v4'
+    require_live_model: bool = False
 
     @model_validator(mode="after")
     def selected(self) -> Spec:
+        if self.require_live_model and (self.all_profiles or not self.providers or not self.docker.provider_network
+                or any(not target.provider for target in self.targets)):
+            raise ValueError('Online realism requires explicit targets, providers and provider_network')
         if not self.targets and not self.all_profiles:
             raise ValueError("Select targets or all_profiles")
         if len({t.name for t in self.targets}) != len(self.targets):

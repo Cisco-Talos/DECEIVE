@@ -6,7 +6,12 @@ protocol: ssh
 requirements:
   protocol: ssh
   preferred_port: 8022
-  capabilities: [ssh.commands, 'behavior:sudo-2019-14287', 'behavior:virtual_files']
+  capabilities: [ssh.commands, ssh.device, 'behavior:sudo-2019-14287', 'behavior:virtual_files']
+device:
+  platform: linux
+  interpreter: bash
+  applications: [less, top, vi]
+  model_effects: true
 identity:
   hostname: build-node-03
   os: Debian GNU/Linux 10
@@ -40,7 +45,43 @@ behaviors:
     options: {patched: false, runas_all: true}
   - id: virtual-files
     kind: virtual_files
-    options: {directories: [/tmp, /var/tmp, /home/guest/builds], listing_time: 'Oct 18  2019'}
+    options:
+      directories: [/tmp, /var/tmp, /home/guest/builds, /bin, /usr/bin]
+      listing_time: 'Oct 18  2019'
+      executables:
+        - /bin/bash
+        - /bin/cat
+        - /bin/echo
+        - /bin/ls
+        - /bin/mkdir
+        - /bin/pwd
+        - /bin/rm
+        - /bin/sh
+        - /bin/touch
+        - /bin/uname
+        - /usr/bin/chmod
+        - /usr/bin/cp
+        - /usr/bin/env
+        - /usr/bin/false
+        - /usr/bin/grep
+        - /usr/bin/head
+        - /usr/bin/hostname
+        - /usr/bin/id
+        - /usr/bin/kill
+        - /usr/bin/less
+        - /usr/bin/mv
+        - /usr/bin/python
+        - /usr/bin/python3
+        - /usr/bin/sort
+        - /usr/bin/stat
+        - /usr/bin/sudo
+        - /usr/bin/tail
+        - /usr/bin/top
+        - /usr/bin/true
+        - /usr/bin/vi
+        - /usr/bin/wc
+        - /usr/bin/which
+        - /usr/bin/whoami
   - id: identity
     kind: identity
 fallback: llm_if_available
@@ -50,6 +91,11 @@ prompt: |
   Simulate the current Debian GNU/Linux 10 build-node-03 session. Preserve the
   supplied identity, virtual files, account and cwd facts. The runtime handles
   sudo policy and basic virtual commands first; answer only other current input.
+  The executable inventory is a stable baseline, not a whitelist. For an
+  unfamiliar installed command, provide its ordinary output and propose a matching
+  private add_executables effect so later discovery remains consistent. Preserve
+  Python REPL context when the current prompt is >>>; do not treat Python input as
+  a shell command. Model proposals may change only permitted private virtual state.
   Never claim that a command ran on the host or changed files outside the virtual
   view. Keep stdout, stderr and exit status consistent with an ordinary shell.
 references:
@@ -57,6 +103,8 @@ references:
   - https://www.sudo.ws/alerts/minus_1_uid.html
   - https://github.com/sudo-project/sudo/blob/SUDO_1_8_27/plugins/sudoers/logging.c#L303-L309
 limitations:
+  - /bin and /usr/bin expose a profile-owned, bounded executable inventory; listed binaries are virtual and never run on the host.
+  - The Python 3.7 prompt supports limited expressions, virtual reads and simple printing; it does not interpret arbitrary Python programs.
   - Sudo version/list probes and the declared id command family are emulated; basic virtual file and navigation commands support the surrounding host session.
   - Group fields are simulation fixtures; only the documented effective-UID bypass is claimed.
   - No shell execution, persistent root shell, PAM behavior, or arbitrary binaries.

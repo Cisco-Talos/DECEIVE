@@ -1,0 +1,16 @@
+{
+  "id": "linux-device",
+  "cases": [
+    {
+      "id": "baseline",
+      "steps": [
+        {
+          "command": "uname -s",
+          "expect": {
+            "contains": "Linux"
+          }
+        }
+      ]
+    }
+  ]
+}

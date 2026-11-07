@@ -2,6 +2,12 @@ schema_version: 1
 # For version 2 organization/instance bindings, see contracts-deployment.yaml
 # and ../docs/behavior-contracts.md.
 # For two model-free reference CVEs, see reference-deployment.yaml.
+# The sudo reference profile includes virtual /bin and /usr/bin listings and a
+# bounded Python prompt; no container or host executables are invoked by SSH input.
+# Add a selected provider to its SSH listener to allow unfamiliar commands and
+# Python statements to use validated model proposals; model-free mode needs no keys.
+# For CLI-only profile selection, use --provider-config providers.local.yaml to
+# apply that catalog's global default without writing a second deployment YAML.
 # For the model-free SSH auth-bypass profile, select sshhole-2026-123158 on its
 # own SSH listener (or use: deceive serve --profile sshhole-2026-123158).
 # Its profile-scoped ssh_auth policy overrides listener accounts only for that profile.
@@ -10,6 +16,9 @@ schema_version: 1
 # For requirement-driven composition, see composition-deployment.yaml.
 # Validate the exact selection before serving:
 # deceive config validate --config deployment.yaml --deception ANOTHER_PROFILE
+# Validation checks selected providers live by default; use --offline for CI/static checks.
+# Managed deployment start preflights providers in-container before listeners open;
+# --skip-preflight disables that gate for a new container, retaining static validation.
 # CLI --deception / --profile selections add to this file; serve revalidates.
 # Active assessment uses the separate assessment.yaml spec; production YAML is unchanged.
 # Named Docker execution reuses this YAML: deceive deployment start NAME --config deployment.yaml.
@@ -19,6 +28,11 @@ schema_version: 1
 # volume, and managed file telemetry maps to /data/telemetry.jsonl. Native serve retains paths.
 data_dir: ./data
 sensor_name: deceive
+# To share provider settings, copy providers.yaml to providers.local.yaml and add:
+# provider_config: providers.local.yaml
+# The catalog's default_provider applies where provider is omitted.
+# Use provider: null on a listener (or default_provider: null here) to stay model-free.
+# env_file: .env  # optional deployment override; paths belong to their owning YAML
 # stdout JSONL is the default. Uncomment to write a file relative to this YAML.
 # Rejected SSH model attempts and their delivered final failure share a request_id.
 # Linux virtual commands include bounded literal-only printf and private bare history.
@@ -65,3 +79,20 @@ listeners:
 #     provider: default
 #     analyze: true
 #     accounts: {guest: "", root: "*", user1: secret}
+# Whole-device model-free SSH: choose linux-device, macos-device, freebsd-device,
+# or ios-device. They provide private channel state and platform-specific interpreters.
+# IOS paging is inline (terminal length 0..512); Unix monitors share virtual resource
+# facts with ps aux/model context. No host process or network inventory is read.
+# Unix text-editor saves use LF line endings; pager scrolling and CPU counters
+# retain their state across refresh/resize. IOS diagnostics identify caret/control keys.
+# Provider request failures preserve SSH private state; sanitized attempt failures
+# correlate with the final wire response. IOS connected routes track interface shutdown.
+# Device packs declare terminal applications and optional validated model effects.
+# Supported Unix command flags and application keys are listed in the device guide;
+# assessment-only password continuation prompts belong to probe actions, not this YAML.
+# See ../docs/device-sessions.md and testing.yaml for ignored local online configuration.
+# limits:
+#   channel_limit: 16
+#   application_depth: 8
+#   screen_columns: 240
+#   screen_rows: 100

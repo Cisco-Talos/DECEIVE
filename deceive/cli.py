@@ -15,6 +15,7 @@ from pydantic import ValidationError
 
 from deceive.behaviors import BUILTIN_BEHAVIORS, validate_behavior
 from deceive.config import fingerprint, load_deployment, load_profile
+from deceive.preflight import PreflightError
 from deceive.composition import resolve
 from deceive.migrate import migrate
 from deceive.models import Deception, Deployment, ProviderConfig
@@ -26,6 +27,8 @@ from deceive.operations import OperationResult, output_argument
 def selection_arguments(command: argparse.ArgumentParser) -> None:
     output_argument(command)
     command.add_argument("--config", "-c", type=Path)
+    command.add_argument("--provider-config", type=Path,
+                         help="Shared provider catalog for CLI-only profile selection")
     command.add_argument("--organization", type=Path, help="Default organization values for selected instances")
     command.add_argument("--profile", "--deception", dest="profile", action="append",
                          help="Add a built-in name or profile YAML (repeatable; additive with --config)")
@@ -59,6 +62,8 @@ def parser() -> argparse.ArgumentParser:
     add_parser(commands)
     serve = commands.add_parser("serve", help="Start protocol listeners")
     selection_arguments(serve)
+    serve.add_argument('--preflight', action='store_true',
+                       help='Check selected providers before opening listeners (managed startup default)')
     profiles = commands.add_parser("profile", help="Validate and evaluate profiles")
     output_argument(profiles)
     actions = profiles.add_subparsers(dest="action", required=True)
@@ -90,6 +95,8 @@ def parser() -> argparse.ArgumentParser:
     config_actions = configs.add_subparsers(dest="action", required=True)
     check = config_actions.add_parser("validate", help="Validate selections and print the listener plan without starting")
     selection_arguments(check)
+    check.add_argument('--offline', action='store_true',
+                       help='Validate locally without provider requests or credential initialization')
     migration = config_actions.add_parser("migrate")
     output_argument(migration)
     migration.add_argument("source", type=Path)
@@ -110,6 +117,8 @@ def parser() -> argparse.ArgumentParser:
             action.add_argument("--env", dest="env_names", action="append", default=[], metavar="NAME")
             action.add_argument("--aws-dir", type=Path)
             action.add_argument("--timeout", type=float, default=30)
+            action.add_argument('--skip-preflight', action='store_true',
+                                help='Skip live provider checks for a new deployment; static validation still runs')
         else:
             output_argument(action)
         action.add_argument("--state-dir", type=Path,
@@ -125,6 +134,8 @@ def parser() -> argparse.ArgumentParser:
 
 def deployment_from_args(args: argparse.Namespace) -> Deployment:
     if args.config:
+        if args.provider_config:
+            raise ValueError("Use provider_config in deployment YAML instead of --provider-config with --config")
         if any((args.provider, args.model, args.host, args.port is not None,
                 args.https, args.http_versions, args.quic_port is not None, args.advertised_port, args.analyze)):
             raise ValueError("Use deployment YAML for listener settings when --config is supplied")
@@ -148,6 +159,14 @@ def deployment_from_args(args: argparse.Namespace) -> Deployment:
         providers=providers, deceptions=[Deception(profile=ref) for ref in args.profile or ["demo-http"]],
         deception_defaults={"host": args.host or "0.0.0.0",
                             "provider": "default" if providers else None, "analyze": args.analyze})
+    if args.provider_config:
+        from deceive.provider_config import resolve_provider_settings
+        raw = deployment.model_dump(mode="python")
+        raw.pop("default_provider", None)
+        if raw["deception_defaults"].get("provider") is None:
+            raw["deception_defaults"].pop("provider")
+        raw["provider_config"] = str(args.provider_config.resolve())
+        deployment = Deployment.model_validate(resolve_provider_settings(raw, Path.cwd()))
     plan = resolve(deployment)
     if len(plan.listeners) == 1:
         # Preserve key/certificate filenames for the existing single-profile CLI.
@@ -170,14 +189,14 @@ def deployment_from_args(args: argparse.Namespace) -> Deployment:
         "listeners": [l.model_dump() for l in plan.listeners], "deceptions": []})
 
 
-async def serve(deployment: Deployment) -> None:
+async def serve(deployment: Deployment, *, preflight: bool = False) -> None:
     runtime = Runtime(deployment)
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, stop.set)
     try:
-        await runtime.start()
+        await runtime.start(preflight=preflight)
         await stop.wait()
     finally:
         await runtime.close()
@@ -185,10 +204,12 @@ async def serve(deployment: Deployment) -> None:
             loop.remove_signal_handler(sig)
 
 
-async def validated_plan(deployment: Deployment) -> dict:
+async def validated_plan(deployment: Deployment, *, offline: bool = False) -> dict:
     runtime = Runtime(deployment, telemetry=Telemetry(deployment.sensor_name, stream=io.StringIO()))
     try:
-        return {"description": runtime.plan.describe(), "listeners": [{
+        validation = ({'mode': 'offline', 'verification': 'offline-valid', 'passed': True, 'checks': []}
+                      if offline else await runtime.preflight())
+        return {"validation": validation, "description": runtime.plan.describe(), "listeners": [{
             "name": listener.name, "protocol": listener.protocol, "host": listener.host,
             "port": listener.port, "quic_port": listener.quic_port,
             "versions": listener.versions if listener.protocol in {"http", "https"} else [],
@@ -201,12 +222,12 @@ async def validated_plan(deployment: Deployment) -> dict:
         await runtime.close()
 
 
-async def validate_config(deployment: Deployment) -> None:
-    plan = await validated_plan(deployment)
+async def validate_config(deployment: Deployment, *, offline: bool = False) -> None:
+    plan = await validated_plan(deployment, offline=offline)
     print("Valid runtime configuration:")
     for line in plan["description"]:
         print("  " + line)
-    print("No listeners started; provider connectivity and port availability are checked at startup.")
+    print(f"Validation: {plan['validation']['verification']}. No listeners started.")
 
 
 def healthcheck(data_dir: Path) -> bool:
@@ -267,7 +288,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "serve":
             if json_output:
                 raise ValueError("serve streams JSONL telemetry; use deployment start --json for an operation result")
-            asyncio.run(serve(deployment_from_args(args)))
+            asyncio.run(serve(deployment_from_args(args), preflight=args.preflight))
         elif args.command == "healthcheck":
             ready = healthcheck(args.data_dir)
             outcome.data, outcome.exit_code = {"ready": ready}, 0 if ready else 1
@@ -286,7 +307,7 @@ def main(argv: list[str] | None = None) -> int:
                 config = deployment_from_args(args) if settings or not retained else None
                 outcome.data = asyncio.run(manager.start(args.name, config, image=args.image,
                     publish_host=args.host or args.publish_host, publish=args.publish, env_names=args.env_names,
-                    aws_dir=args.aws_dir, timeout=args.timeout))
+                    aws_dir=args.aws_dir, timeout=args.timeout, skip_preflight=args.skip_preflight))
             elif args.action == "stop":
                 outcome.data = manager.stop(args.name, timeout=args.timeout)
             elif args.action == "status":
@@ -309,9 +330,13 @@ def main(argv: list[str] | None = None) -> int:
                                  for binding in listener["bindings"])
         elif args.command == "config":
             if args.action == "validate":
-                outcome.data = asyncio.run(validated_plan(deployment_from_args(args)))
+                outcome.data = asyncio.run(validated_plan(deployment_from_args(args), offline=args.offline))
                 lines = ["Valid runtime configuration:"] + ["  " + row for row in outcome.data["description"]]
-                lines.append("No listeners started; provider connectivity and port availability are checked at startup.")
+                validation = outcome.data['validation']
+                lines.append(f"Validation: {validation['verification']}. No listeners started.")
+                for check in validation['checks']:
+                    lines.append(f"  Provider {', '.join(check['providers'])}: {check['status']} "
+                                 f"({check['seconds']:.3f}s)")
             else:
                 lines = list(migrate(args.source, args.output_dir))
                 outcome.data = {"notes": lines, "output_dir": str(args.output_dir.resolve())}
@@ -358,6 +383,17 @@ def main(argv: list[str] | None = None) -> int:
             outcome.artifacts = [str(path.resolve()) for path in sorted(args.report_dir.iterdir()) if path.is_file()]
             lines = [f"{'PASS' if report['passed'] else 'FAIL'}: {report['passed_cases']}/{report['total_cases']} cases"]
         return outcome.emit(json_output=json_output, lines=lines)
+    except PreflightError as exc:
+        if json_output:
+            return OperationResult(operation, data={'validation': exc.report}, exit_code=2,
+                error={'code': 'provider_preflight_failed', 'message': str(exc)}).emit(
+                    json_output=True, lines=[])
+        print(str(exc), file=sys.stderr)
+        for check in exc.report['checks']:
+            error = check.get('error', {})
+            print(f"  Provider {', '.join(check['providers'])}: {check['status']} "
+                  f"{error.get('message', '')} {error.get('type', '')}", file=sys.stderr)
+        return 2
     except ValidationError as exc:
         # Default Pydantic formatting includes input values, possibly secrets.
         message = "Invalid configuration: " + "; ".join(

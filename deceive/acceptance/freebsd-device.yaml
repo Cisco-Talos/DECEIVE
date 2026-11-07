@@ -1,0 +1,16 @@
+{
+  "id": "freebsd-device",
+  "cases": [
+    {
+      "id": "baseline",
+      "steps": [
+        {
+          "command": "uname -s",
+          "expect": {
+            "contains": "FreeBSD"
+          }
+        }
+      ]
+    }
+  ]
+}
